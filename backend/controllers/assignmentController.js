@@ -1,7 +1,6 @@
 const db = require('../config/db');
 
 // Assign quizzes
-// Assign quizzes
 async function assignQuizzes(req, res, next) {
   try {
     const { quiz_id, student_ids, due_at } = req.body;
