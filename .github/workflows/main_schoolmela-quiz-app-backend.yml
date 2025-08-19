@@ -64,4 +64,4 @@ jobs:
           app-name: 'schoolmela-quiz-app-backend'  # Your App Service name
           slot-name: 'Production'
           package: ./backend
-          startup-command: 'node server.js'
+
