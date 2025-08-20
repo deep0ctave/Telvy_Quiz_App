@@ -15,12 +15,12 @@ import Settings from '../components/pages/Settings';
 import NotFound from '../components/pages/NotFound';
 
 // Student
-import Quizzes from '../components/pages/student/Quizzes';
+import Quizzes from '../components/pages/Student/quizzes';
 import QuizStart from '../components/pages/Attempts/QuizStart';
 import LiveAttempt from '../components/pages/Attempts/LiveAttempt';
 import AttemptResult from '../components/pages/Attempts/AttemptResult';
 import AttemptHistory from '../components/pages/Attempts/AttemptHistory';
-import Stats from '../components/pages/student/Stats';
+import Stats from '../components/pages/Student/Stats';
 import Leaderboard from '../components/pages/student/Leaderboard';
 
 // Teacher
