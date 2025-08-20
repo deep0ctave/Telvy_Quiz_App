@@ -2,7 +2,7 @@ import axios from 'axios';
 
 // Create a pre-configured Axios instance
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL,
+  baseURL: "https://schoolmela-quiz-app-backend-d4hgada5b6gdasd0.centralus-01.azurewebsites.net/api/",
   withCredentials: true, // send cookies including refreshToken
 });
 
