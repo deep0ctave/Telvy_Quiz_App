@@ -49,7 +49,7 @@ api.interceptors.response.use(
 
       try {
         const { data } = await axios.post(
-          `${import.meta.env.VITE_API_URL}/auth/refresh`,
+          `${"https://schoolmela-quiz-app-backend-d4hgada5b6gdasd0.centralus-01.azurewebsites.net/api/"}/auth/refresh`,
           {},
           { withCredentials: true }
         );
