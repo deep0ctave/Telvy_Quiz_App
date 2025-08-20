@@ -24,7 +24,7 @@ app.use(bodyParser.json({ limit: '2mb' }));
 
 // Configure CORS properly for credentials
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+  origin: ['http://localhost:5173', 'http://127.0.0.1:5173','https://happy-smoke-0f7647710.2.azurestaticapps.net'],
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
