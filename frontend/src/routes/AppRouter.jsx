@@ -21,7 +21,7 @@ import LiveAttempt from '../components/pages/Attempts/LiveAttempt';
 import AttemptResult from '../components/pages/Attempts/AttemptResult';
 import AttemptHistory from '../components/pages/Attempts/AttemptHistory';
 import Stats from '../components/pages/Student/Stats';
-import Leaderboard from '../components/pages/student/Leaderboard';
+import Leaderboard from '../components/pages/Student/Leaderboard';
 
 // Teacher
 //import QuizList from '../components/pages/Teacher/QuizList';
