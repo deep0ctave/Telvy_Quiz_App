@@ -15,14 +15,15 @@ function resolveAuth(ok) {
 
 export function connect(token) {
   if (socket && socket.connected) return socket;
-  const baseURL = (import.meta.env.VITE_API_BASE_URL?.replace(/\/api$/, '')) || 'http://localhost:3000';
+  const baseURL = (import.meta.env.VITE_API_BASE_URL?.replace(/\/api$/, '')) || 'https://schoolmela-quiz-app-backend-d4hgada5b6gdasd0.centralus-01.azurewebsites.net';
   socket = io(baseURL, {
     withCredentials: true,
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
-    path: '/socket.io'
+    path: '/socket.io',
+    secure: baseURL.startsWith('https://')
   });
 
   socket.on('connect', () => {
