@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 // Create a pre-configured Axios instance
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:3000/api';
+const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://schoolmela-quiz-app-backend-d4hgada5b6gdasd0.centralus-01.azurewebsites.net/api';
 const api = axios.create({
   baseURL: BASE_URL,
   withCredentials: true, // send cookies including refreshToken
