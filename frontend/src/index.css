@@ -2,3 +2,10 @@
 @plugin "daisyui"{
     themes: all;
 }
+
+/* react-phone-number-input themeing to match DaisyUI/Tailwind */
+.PhoneInput { display: flex; align-items: center; gap: 0.5rem; width: 100%; }
+.PhoneInputCountry { display: flex; align-items: center; padding-right: 0.5rem; }
+
+.PhoneInputInput { flex: 1 1 auto; border: none; padding: 0; height: 2.75rem; line-height: 2.75rem; }
+.PhoneInputInput:focus { outline: none; }

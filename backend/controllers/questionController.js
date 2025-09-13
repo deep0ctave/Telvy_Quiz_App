@@ -3,7 +3,7 @@ const db = require('../config/db');
 
 async function createQuestion(req, res, next) {
   try {
-    const { question_text, question_type, options, correct_answers, time_limit, difficulty, tags } = req.body;
+    const { question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url } = req.body;
     const created_by = req.user.id;
 
     // Ensure JSONB safe format
@@ -12,10 +12,10 @@ async function createQuestion(req, res, next) {
 
     const ins = await db.query(
       `INSERT INTO questions 
-        (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, created_by) 
-       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8) 
+        (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url, created_by) 
+       VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9) 
        RETURNING id`,
-      [question_text, question_type, optionsJson, correctJson, time_limit || 0, difficulty, tags, created_by]
+      [question_text, question_type, optionsJson, correctJson, time_limit || 0, difficulty, tags, image_url, created_by]
     );
 
     res.json({ id: ins.rows[0].id });
@@ -41,7 +41,7 @@ async function getQuestion(req, res, next) {
 async function updateQuestion(req, res, next) {
   try {
     const id = parseInt(req.params.id, 10);
-    const allowed = ['question_text', 'question_type', 'options', 'correct_answers', 'time_limit', 'difficulty', 'tags'];
+    const allowed = ['question_text', 'question_type', 'options', 'correct_answers', 'time_limit', 'difficulty', 'tags', 'image_url'];
     const fields = [];
     const vals = [];
     let idx = 1;
@@ -113,8 +113,8 @@ async function createBulkQuestions(req, res, next) {
 
         const ins = await db.query(
           `INSERT INTO questions 
-            (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, created_by) 
-           VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8) 
+            (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url, created_by) 
+           VALUES ($1,$2,$3::jsonb,$4::jsonb,$5,$6,$7,$8,$9) 
            RETURNING id`,
           [
             question.question_text, 
@@ -124,6 +124,7 @@ async function createBulkQuestions(req, res, next) {
             question.time_limit || 0, 
             question.difficulty || 'medium', 
             question.tags || [], 
+            question.image_url || null,
             created_by
           ]
         );

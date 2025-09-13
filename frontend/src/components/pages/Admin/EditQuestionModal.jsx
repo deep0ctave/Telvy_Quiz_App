@@ -144,11 +144,37 @@ const EditQuestionModal = ({ question, onClose, onSave }) => {
             />
           </fieldset>
 
+          <fieldset>
+            <legend className="label">Image URL (optional)</legend>
+            <input
+              type="url"
+              className="input input-bordered w-full"
+              placeholder="https://example.com/image.jpg"
+              value={form.image_url || ""}
+              onChange={(e) => handleChange("image_url", e.target.value)}
+            />
+            {form.image_url && (
+              <div className="mt-2">
+                <img 
+                  src={form.image_url} 
+                  alt="Question preview" 
+                  className="max-w-full h-32 object-contain rounded border"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
+          </fieldset>
+
                       {["mcq", "truefalse"].includes(form.question_type) && (
             <fieldset className="space-y-2">
               <legend className="label">Options</legend>
               {form.options.map((opt, i) => (
-                <div key={i} className="flex gap-2">
+                <div key={i} className="flex items-center gap-2">
+                  <span className="font-mono text-sm bg-base-200 rounded px-2 py-1">
+                    {String.fromCharCode(97 + i)}
+                  </span>
                   <input
                     type="text"
                     className="input input-bordered w-full"

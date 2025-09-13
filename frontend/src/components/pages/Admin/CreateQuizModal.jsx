@@ -18,16 +18,15 @@ const CreateQuizModal = ({ onClose, onCreate }) => {
     if (!form.title.trim()) return toast.error("Quiz title is required");
 
     try {
-             const payload = {
-         title: form.title,
-         description: form.description || null,
-         image_url: form.image_url || null,
-         quiz_type: form.quiz_type,
-         total_time: form.time_limit,
-         difficulty: form.difficulty,
-         tags: form.tags.filter(Boolean),
-         scheduled_at: null
-       };
+      const payload = {
+        title: form.title,
+        description: form.description || null,
+        image_url: form.image_url || null,
+        quiz_type: form.quiz_type,
+        total_time: form.time_limit,
+        difficulty: form.difficulty,
+        tags: form.tags.filter(Boolean)
+      };
       const result = await createQuiz(payload);
       onCreate({ ...form, id: result.id });
       toast.success("Quiz created successfully");

@@ -42,37 +42,40 @@ await pool.query(`
 
     // insert sample questions & quiz and mapping
     const qres1 = await pool.query(`
-      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, created_by)
-      VALUES ($1,'mcq',$2,$3,30,'easy',ARRAY['math','basic'],(SELECT id FROM users WHERE username='teacher1')) RETURNING id
+      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url, created_by)
+      VALUES ($1,'mcq',$2,$3,30,'easy',ARRAY['math','basic'],$4,(SELECT id FROM users WHERE username='teacher1')) RETURNING id
     `, [
       'What is 2 + 2?',
       JSON.stringify([{ id: 'a', text: '3' }, { id: 'b', text: '4' }, { id: 'c', text: '22' }, { id: 'd', text: '5' }]),
-      JSON.stringify(['b'])
+      JSON.stringify(['b']),
+      'https://images.unsplash.com/photo-1635070041078-e363dbe005cb?w=400&h=300&fit=crop'
     ]);
 
     const qres2 = await pool.query(`
-      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, created_by)
-      VALUES ($1,'mcq',$2,$3,45,'medium',ARRAY['math','algebra'],(SELECT id FROM users WHERE username='teacher1')) RETURNING id
+      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url, created_by)
+      VALUES ($1,'mcq',$2,$3,45,'medium',ARRAY['math','algebra'],$4,(SELECT id FROM users WHERE username='teacher1')) RETURNING id
     `, [
       'What is the value of x in the equation 2x + 5 = 13?',
       JSON.stringify([{ id: 'a', text: '3' }, { id: 'b', text: '4' }, { id: 'c', text: '5' }, { id: 'd', text: '6' }]),
-      JSON.stringify(['b'])
+      JSON.stringify(['b']),
+      null
     ]);
 
     const qres3 = await pool.query(`
-      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, created_by)
-      VALUES ($1,'truefalse',$2,$3,30,'easy',ARRAY['science','general'],(SELECT id FROM users WHERE username='teacher1')) RETURNING id
+      INSERT INTO questions (question_text, question_type, options, correct_answers, time_limit, difficulty, tags, image_url, created_by)
+      VALUES ($1,'truefalse',$2,$3,30,'easy',ARRAY['science','general'],$4,(SELECT id FROM users WHERE username='teacher1')) RETURNING id
     `, [
       'The Earth is round.',
       JSON.stringify([{ id: 'a', text: 'True' }, { id: 'b', text: 'False' }]),
-      JSON.stringify(['a'])
+      JSON.stringify(['a']),
+      'https://images.unsplash.com/photo-1614728894747-a83421e2b9c9?w=400&h=300&fit=crop'
     ]);
 
     const qid = qres1.rows[0].id;
     const quizRes = await pool.query(`
       INSERT INTO quizzes (title, description, total_time, quiz_type, number_of_questions, difficulty, tags, created_by)
-      VALUES ($1,$2,600,'anytime',3,'medium',ARRAY['sample','math','science'],(SELECT id FROM users WHERE username='teacher1')) RETURNING id
-    `, ['Sample Quiz', 'A sample quiz with multiple questions']);
+      VALUES ($1,$2,$3,'anytime',3,'medium',ARRAY['sample','math','science'],(SELECT id FROM users WHERE username='teacher1')) RETURNING id
+    `, ['Sample Quiz', 'A sample quiz with multiple questions', 300]);
     const quizId = quizRes.rows[0].id;
 
     // Add all questions to the quiz

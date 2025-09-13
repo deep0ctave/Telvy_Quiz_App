@@ -8,6 +8,8 @@ import { useAuth } from '../../context/AuthContext';
 import api from '../../services/api';
 import 'react-toastify/dist/ReactToastify.css';
 import 'react-datepicker/dist/react-datepicker.css';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 
 const Register = () => {
   const navigate = useNavigate();
@@ -27,6 +29,7 @@ const Register = () => {
     password: '',
     confirmPassword: '',
   });
+  const [fullPhone, setFullPhone] = useState('');
   const [dobDate, setDobDate] = useState(null);
   const [otp, setOtp] = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -178,10 +181,30 @@ const Register = () => {
               <option value="female">Female</option>
               <option value="other">Other</option>
             </select>
-            <label className="input w-full">
-              <span className="label">+91</span>
-              <input name="phone" type="tel" placeholder="Phone number" className="w-full" value={form.phone} onChange={handleChange} maxLength={10} />
-            </label>
+            <div className="input input-bordered w-full flex items-center gap-2 px-3">
+              <PhoneInput
+                placeholder="Phone number"
+                defaultCountry="IN"
+                international
+                countryCallingCodeEditable={false}
+                value={fullPhone}
+                onChange={(val) => {
+                  const v = val || '';
+                  setFullPhone(v);
+                  setForm({ ...form, phone: v });
+                }}
+                className="w-full"
+                countrySelectProps={{
+                  className: "PhoneInputCountrySelect",
+                  style: {
+                    background: 'transparent',
+                    border: 'none',
+                    outline: 'none',
+                    color: 'inherit'
+                  }
+                }}
+              />
+            </div>
             <input name="email" type="email" placeholder="Email" className="input input-bordered w-full" value={form.email} onChange={handleChange} />
             <button type="button" onClick={next} className="btn btn-primary w-full">Next</button>
           </>

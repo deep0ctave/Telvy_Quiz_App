@@ -1,4 +1,6 @@
 import React, { useState, useEffect } from "react";
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import { createUser, getUserById } from "../../../services/api";
@@ -29,6 +31,7 @@ const CreateUserModal = ({ onClose, onCreate }) => {
       const payload = {
         ...form,
         dob: form.dob ? form.dob.toISOString().split("T")[0] : null,
+        phone: form.phone
       };
       const res = await createUser(payload);
       // The backend returns { id: newUserId }, so we need to fetch the complete user data
@@ -44,7 +47,7 @@ const CreateUserModal = ({ onClose, onCreate }) => {
 
   return (
     <dialog open className="modal modal-open">
-      <div className="modal-box space-y-4 max-w-2xl">
+      <div className="modal-box space-y-4 max-w-2xl max-h-[95vh] min-h-[28rem] overflow-visible">
         <h3 className="font-bold text-lg">Create User</h3>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -60,7 +63,12 @@ const CreateUserModal = ({ onClose, onCreate }) => {
 
           <label className="input">
             <span className="label">Phone</span>
-            <input value={form.phone} onChange={(e) => handleChange("phone", e.target.value)} />
+            <PhoneInput
+              defaultCountry="IN"
+              value={form.phone}
+              onChange={(val) => handleChange("phone", val || "")}
+              className="w-full"
+            />
           </label>
 
           <label className="input">
@@ -88,8 +96,18 @@ const CreateUserModal = ({ onClose, onCreate }) => {
             <DatePicker
               selected={form.dob}
               onChange={(date) => handleChange("dob", date)}
-              dateFormat="dd-MM-yyyy"
+              dateFormat="dd/MM/yyyy"
               className="input input-bordered w-full"
+              wrapperClassName="w-full"
+              popperPlacement="bottom-start"
+              popperClassName="z-[9999]"
+              shouldCloseOnScroll={false}
+              maxDate={new Date()}
+              showMonthDropdown
+              showYearDropdown
+              dropdownMode="select"
+              yearDropdownItemNumber={100}
+              shouldCloseOnSelect
               placeholderText="Select date"
             />
           </label>

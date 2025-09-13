@@ -23,8 +23,12 @@ app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '2mb' }));
 
 // Configure CORS properly for credentials
+const allowedOrigins = (
+  process.env.CORS_ORIGINS || 'http://localhost:5173,http://127.0.0.1:5173,https://happy-smoke-0f7647710.2.azurestaticapps.net'
+).split(',').map(o => o.trim()).filter(Boolean);
+
 const corsOptions = {
-  origin: ['http://localhost:5173', 'http://127.0.0.1:5173','https://happy-smoke-0f7647710.2.azurestaticapps.net'],
+  origin: allowedOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept'],
@@ -36,7 +40,10 @@ app.use(cors(corsOptions));
 // Additional CORS headers for preflight requests
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Allow-Origin', 'https://happy-smoke-0f7647710.2.azurestaticapps.net');
+  const requestOrigin = req.headers.origin;
+  if (allowedOrigins.includes(requestOrigin)) {
+    res.header('Access-Control-Allow-Origin', requestOrigin);
+  }
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   

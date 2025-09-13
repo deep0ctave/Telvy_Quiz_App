@@ -55,7 +55,11 @@ const AttemptHistory = () => {
                 <div className="flex items-center gap-4 text-sm text-gray-600 mt-1">
                   <div className="flex items-center gap-1">
                     <CheckCircle className="w-4 h-4" />
-                    <span>Score: {attempt.score}/{attempt.state?.questions?.length || 'N/A'}</span>
+                    <span>
+                      {attempt.status === 'completed'
+                        ? `Score: ${Number(attempt.score ?? 0)}%`
+                        : 'Score: —'}
+                    </span>
                   </div>
                   <div className="flex items-center gap-1">
                     <Calendar className="w-4 h-4" />
@@ -63,15 +67,18 @@ const AttemptHistory = () => {
                   </div>
                 </div>
                 <p className="text-xs text-gray-500 mt-1">
-                  Status: {attempt.status} • {attempt.finished_at ? 'Completed' : 'In Progress'}
+                  Status: {attempt.finished_at ? 'completed' : 'in_progress'}
                 </p>
                 <div className="mt-4">
-                  <Link
-                    to={`/attempts/result/${attempt.id}`}
-                    className="btn btn-sm btn-primary"
-                  >
-                    View Result
-                  </Link>
+                  {attempt.finished_at ? (
+                    <Link to={`/attempts/result/${attempt.id}`} className="btn btn-sm btn-primary">
+                      View Result
+                    </Link>
+                  ) : (
+                    <Link to={`/attempts/live/${attempt.id}`} className="btn btn-sm btn-warning">
+                      Continue
+                    </Link>
+                  )}
                 </div>
               </div>
             </div>

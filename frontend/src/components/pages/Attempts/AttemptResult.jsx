@@ -2,6 +2,7 @@
 import React, { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getAttemptById } from '../../../services/api';
+import { getAttempt as socketGetAttempt } from '../../../services/socketClient';
 import { toast } from 'react-toastify';
 import { CheckCircle, XCircle, Clock, Award, ArrowLeft, Loader2, AlertCircle, AlertTriangle } from 'lucide-react';
 
@@ -9,27 +10,66 @@ const AttemptResult = () => {
   const { attemptId } = useParams();
   const navigate = useNavigate();
   const [attempt, setAttempt] = useState(null);
+  const [loadError, setLoadError] = useState(null);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const loadAttempt = async () => {
+    const loadAttempt = async (retryCount = 0) => {
       try {
+        console.log(`[ATTEMPT-RESULT] Loading attempt ${attemptId}, retry ${retryCount}`);
         setLoading(true);
-        const attemptData = await getAttemptById(attemptId);
+        let attemptData = null;
         
-        // Check if attempt is not submitted
-        if (attemptData.status !== 'submitted') {
-          toast.error('This attempt is not completed yet.');
-          navigate('/dashboard');
+        // Try REST API first (more reliable for completed attempts)
+        try {
+          console.log(`[ATTEMPT-RESULT] Trying REST API for ${attemptId}`);
+          attemptData = await getAttemptById(attemptId);
+          console.log(`[ATTEMPT-RESULT] Got data from REST:`, { status: attemptData.status, score: attemptData.score });
+        } catch (restError) {
+          console.log('[ATTEMPT-RESULT] REST API failed, trying socket:', restError);
+          
+          // Fallback to socket if REST API failed
+          try {
+            console.log(`[ATTEMPT-RESULT] Trying socket getAttempt for ${attemptId}`);
+            const socketResult = await socketGetAttempt(attemptId);
+            console.log(`[ATTEMPT-RESULT] Socket result:`, socketResult);
+            if (socketResult.ok) {
+              attemptData = socketResult.data;
+              console.log(`[ATTEMPT-RESULT] Got data from socket:`, { status: attemptData.status, score: attemptData.score });
+            }
+          } catch (socketError) {
+            console.log('[ATTEMPT-RESULT] Both REST and socket failed:', socketError);
+            throw restError; // Throw the original REST error
+          }
+        }
+        
+        // If attempt not completed, send user back to live attempt to finish (no toast)
+        if (attemptData.status !== 'completed') {
+          console.log(`[ATTEMPT-RESULT] Attempt ${attemptId} status is ${attemptData.status}, not completed`);
+          // For auto-submitted attempts, retry more times as DB might not be updated yet
+          if (retryCount < 5) {
+            console.log(`[ATTEMPT-RESULT] Attempt not completed yet, retrying in 1.5 seconds... (${retryCount + 1}/5)`);
+            setTimeout(() => loadAttempt(retryCount + 1), 1500);
+            return;
+          }
+          console.log(`[ATTEMPT-RESULT] Max retries reached, redirecting to live attempt`);
+          navigate(`/attempts/live/${attemptId}`);
           return;
         }
         
+        console.log(`[ATTEMPT-RESULT] Successfully loaded completed attempt ${attemptId}`);
         setAttempt(attemptData);
       } catch (error) {
-        console.error('Failed to load attempt:', error);
-        toast.error('Failed to load attempt results.');
-        navigate('/dashboard');
+        console.error('[ATTEMPT-RESULT] Failed to load attempt:', error);
+        // Retry on error for auto-submitted attempts
+        if (retryCount < 2) {
+          console.log(`[ATTEMPT-RESULT] Error loading attempt, retrying in 1 second... (${retryCount + 1}/2)`);
+          setTimeout(() => loadAttempt(retryCount + 1), 1000);
+          return;
+        }
+        console.log(`[ATTEMPT-RESULT] Max retries reached, showing error`);
+        setLoadError('Failed to load results.');
       } finally {
         setLoading(false);
       }
@@ -208,7 +248,26 @@ const AttemptResult = () => {
   if (loading) {
     return (
       <div className="p-6 flex justify-center items-center min-h-[50vh]">
-        <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        <div className="text-center">
+          <Loader2 className="w-8 h-8 animate-spin text-primary mx-auto mb-4" />
+          <p>Loading results...</p>
+          <p className="text-sm text-gray-500 mt-2">Processing your quiz submission...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="p-6 flex justify-center items-center min-h-[50vh]">
+        <div className="text-center space-y-4">
+          <AlertCircle className="w-8 h-8 text-warning mx-auto" />
+          <p className="text-lg">{loadError}</p>
+          <div className="flex gap-2 justify-center">
+            <button className="btn btn-primary btn-sm" onClick={() => navigate(`/attempts/live/${attemptId}`)}>Resume Quiz</button>
+            <button className="btn btn-outline btn-sm" onClick={() => navigate('/dashboard')}>Back to Dashboard</button>
+          </div>
+        </div>
       </div>
     );
   }
@@ -225,7 +284,7 @@ const AttemptResult = () => {
   }
 
   const questions = attempt.state?.questions || [];
-  const score = parseFloat(attempt.score);
+  const score = Math.round(parseFloat(attempt.score) * 100) / 100; // Round to 2 decimal places
   const totalQuestions = questions.length;
   const correctAnswers = questions.filter(q => isAnswerCorrect(q)).length;
   const currentQuestion = questions[currentQuestionIndex];
@@ -288,6 +347,21 @@ const AttemptResult = () => {
                 Question {currentQuestionIndex + 1} of {questions.length}
               </h2>
               <p className="text-lg">{currentQuestion?.question_text}</p>
+              
+              {/* Question Image */}
+              {currentQuestion?.image_url && (
+                <div className="my-4">
+                  <img 
+                    src={currentQuestion.image_url} 
+                    alt="Question image" 
+                    className="max-w-full h-48 object-contain rounded border mx-auto"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
+              
               {renderQuestionResult(currentQuestion)}
             </div>
           </div>

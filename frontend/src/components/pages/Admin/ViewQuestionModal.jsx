@@ -6,8 +6,8 @@ const ViewQuestionModal = ({ question, onClose }) => {
     if (!options || !Array.isArray(options)) return "N/A";
     return options.map((opt, index) => (
       <div key={index} className="flex items-center gap-2 mb-1">
-        <span className="font-mono text-sm bg-gray-100 px-2 py-1 rounded">
-          {opt.id || String.fromCharCode(97 + index)}
+        <span className="font-mono text-sm bg-base-200 px-2 py-1 rounded">
+          {String.fromCharCode(97 + index)}
         </span>
         <span>{opt.text || opt}</span>
       </div>
@@ -66,10 +66,31 @@ const ViewQuestionModal = ({ question, onClose }) => {
           {/* Question Text */}
           <fieldset>
             <legend className="label font-semibold">Question Text</legend>
-            <div className="p-3 bg-gray-50 rounded-lg">
+            <div className="p-3 bg-base-200 rounded-lg">
               {question.question_text || "N/A"}
             </div>
           </fieldset>
+
+          {/* Question Image */}
+          {question.image_url && (
+            <fieldset>
+              <legend className="label font-semibold">Question Image</legend>
+              <div className="p-3 bg-base-200 rounded-lg">
+                <img 
+                  src={question.image_url} 
+                  alt="Question image" 
+                  className="max-w-full h-48 object-contain rounded border"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                    e.target.nextSibling.style.display = 'block';
+                  }}
+                />
+                <div style={{display: 'none'}} className="text-error">
+                  Failed to load image
+                </div>
+              </div>
+            </fieldset>
+          )}
 
           {/* Question Type */}
           <fieldset>
@@ -122,8 +143,8 @@ const ViewQuestionModal = ({ question, onClose }) => {
           {/* Correct Answer */}
           <fieldset>
             <legend className="label font-semibold">Correct Answer</legend>
-            <div className="p-3 bg-green-50 border border-green-200 rounded-lg">
-              <span className="font-medium text-green-800">
+            <div className="alert alert-success">
+              <span className="font-medium">
                 {formatCorrectAnswers(question.correct_answers)}
               </span>
             </div>

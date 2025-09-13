@@ -33,6 +33,9 @@ const QuizList = () => {
   const [loadingAssignments, setLoadingAssignments] = useState(false);
   const [users, setUsers] = useState([]);
   const [selectedStudents, setSelectedStudents] = useState([]);
+  const [scheduledFrom, setScheduledFrom] = useState("");
+  const [scheduledTill, setScheduledTill] = useState("");
+  const [shuffleQuestions, setShuffleQuestions] = useState(false);
   const [assignmentFilters, setAssignmentFilters] = useState({
     student: "",
     status: "",
@@ -139,15 +142,41 @@ const QuizList = () => {
       return;
     }
 
+    // Validate schedule window if provided
+    if (scheduledFrom) {
+      const from = new Date(scheduledFrom);
+      if (isNaN(from.getTime())) {
+        toast.error("Invalid 'Scheduled from' date/time");
+        return;
+      }
+      if (scheduledTill) {
+        const till = new Date(scheduledTill);
+        if (isNaN(till.getTime())) {
+          toast.error("Invalid 'Scheduled till' date/time");
+          return;
+        }
+        if (till < from) {
+          toast.error("'Scheduled till' must be after 'Scheduled from'");
+          return;
+        }
+      }
+    }
+
     try {
       await assignQuizzes({
         quiz_id: selectedQuizId,
         student_ids: selectedStudents,
-        due_at: null
+        due_at: null,
+        scheduled_from: scheduledFrom ? new Date(scheduledFrom).toISOString() : null,
+        scheduled_till: scheduledTill ? new Date(scheduledTill).toISOString() : null,
+        shuffle_questions: !!shuffleQuestions
       });
       toast.success("Quiz assigned successfully");
       setShowAssignModal(false);
       setSelectedStudents([]);
+      setScheduledFrom("");
+      setScheduledTill("");
+      setShuffleQuestions(false);
       // Refresh assignments
       const data = await getAssignmentsForQuiz(selectedQuizId);
       setAssignments(data);
@@ -551,6 +580,48 @@ const QuizList = () => {
               />
             </div>
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+              <div>
+                <label className="label">
+                  <span className="label-text">Scheduled from</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  className="input input-bordered w-full"
+                  value={scheduledFrom}
+                  onChange={(e) => setScheduledFrom(e.target.value)}
+                  min={new Date().toISOString().slice(0,16)}
+                />
+              </div>
+              <div>
+                <label className="label">
+                  <span className="label-text">Scheduled till (optional)</span>
+                </label>
+                <input
+                  type="datetime-local"
+                  className="input input-bordered w-full"
+                  value={scheduledTill}
+                  onChange={(e) => setScheduledTill(e.target.value)}
+                  min={scheduledFrom || new Date().toISOString().slice(0,16)}
+                />
+              </div>
+            </div>
+
+            <div className="form-control mb-4">
+              <label className="label cursor-pointer justify-start gap-3">
+                <input
+                  type="checkbox"
+                  className="checkbox"
+                  checked={shuffleQuestions}
+                  onChange={(e) => setShuffleQuestions(e.target.checked)}
+                />
+                <span className="label-text">Shuffle question order per student</span>
+              </label>
+              <p className="text-xs text-base-content/60 mt-1">
+                All students receive the same questions but in different, stable orders.
+              </p>
+            </div>
+
             <div className="space-y-2 max-h-96 overflow-y-auto">
               {users.map((user) => (
                 <div key={user.id} className="flex items-center gap-3 p-3 border rounded-lg">
@@ -576,6 +647,8 @@ const QuizList = () => {
                 onClick={() => {
                   setShowAssignModal(false);
                   setSelectedStudents([]);
+                  setScheduledFrom("");
+                  setScheduledTill("");
                 }}
               >
                 Cancel

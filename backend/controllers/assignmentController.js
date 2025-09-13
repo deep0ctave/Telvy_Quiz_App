@@ -3,7 +3,7 @@ const db = require('../config/db');
 // Assign quizzes
 async function assignQuizzes(req, res, next) {
   try {
-    const { quiz_id, student_ids, due_at } = req.body;
+    const { quiz_id, student_ids, due_at, scheduled_from, scheduled_till, shuffle_questions } = req.body;
     const assigned_by = req.user.id;
 
     // Validate input
@@ -13,18 +13,23 @@ async function assignQuizzes(req, res, next) {
       });
     }
 
+    // Ensure optional column exists for shuffle flag (idempotent)
+    try {
+      await db.query(`ALTER TABLE IF EXISTS assignments ADD COLUMN IF NOT EXISTS shuffle_questions BOOLEAN DEFAULT FALSE`);
+    } catch (_) {}
+
     let assignedCount = 0;
     let skipped = [];
 
     for (const sid of student_ids) {
       const result = await db.query(
         `
-        INSERT INTO assignments (quiz_id, student_id, assigned_by, due_at)
-        VALUES ($1, $2, $3, $4)
+        INSERT INTO assignments (quiz_id, student_id, assigned_by, due_at, scheduled_from, scheduled_till, shuffle_questions)
+        VALUES ($1, $2, $3, $4, $5, $6, $7)
         ON CONFLICT (quiz_id, student_id, status) DO NOTHING
         RETURNING id
         `,
-        [quiz_id, sid, assigned_by, due_at]
+        [quiz_id, sid, assigned_by, due_at || null, scheduled_from || null, scheduled_till || null, !!shuffle_questions]
       );
 
       if (result.rows.length) {
@@ -48,17 +53,26 @@ async function assignQuizzes(req, res, next) {
 // Deassign a quiz
 async function deassignQuiz(req, res, next) {
   try {
-    const { quiz_id, student_id } = req.body;
-    const result = await db.query(
-      `
-      UPDATE assignments
-      SET status = 'revoked', updated_at = now()
-      WHERE quiz_id = $1
-        AND student_id = $2
-        AND status = 'assigned'
-      `,
-      [quiz_id, student_id]
-    );
+    const { assignment_id, quiz_id, student_id } = req.body;
+    
+    let result;
+    if (assignment_id) {
+      // Delete by assignment_id (preferred method)
+      result = await db.query(
+        `DELETE FROM assignments WHERE id = $1`,
+        [assignment_id]
+      );
+    } else if (quiz_id && student_id) {
+      // Delete by quiz_id and student_id (fallback)
+      result = await db.query(
+        `DELETE FROM assignments WHERE quiz_id = $1 AND student_id = $2`,
+        [quiz_id, student_id]
+      );
+    } else {
+      return res.status(400).json({
+        error: 'Either assignment_id or both quiz_id and student_id are required'
+      });
+    }
 
     res.json({
       message: result.rowCount ? 'deassigned' : 'no_active_assignment'
@@ -82,13 +96,14 @@ async function myAssignments(req, res, next) {
         a.assigned_at,
         a.updated_at,
         a.due_at,
+        a.scheduled_from,
+        a.scheduled_till,
         a.status AS assignment_status,
         q.id AS quiz_id,
         q.title,
         q.description,
         q.total_time,
         q.quiz_type,
-        q.scheduled_at,
         q.image_url,
         COALESCE(COUNT(qq.question_id), 0) AS total_marks,
         att.id AS attempt_id
@@ -98,9 +113,9 @@ async function myAssignments(req, res, next) {
       LEFT JOIN attempts att ON att.quiz_id = q.id AND att.student_id = a.student_id
       WHERE a.student_id = $1
       GROUP BY 
-        a.id, a.assigned_at, a.updated_at, a.due_at, a.status,
+        a.id, a.assigned_at, a.updated_at, a.due_at, a.scheduled_from, a.scheduled_till, a.status,
         q.id, q.title, q.description, q.total_time, q.quiz_type,
-        q.scheduled_at, q.image_url, att.id
+        q.image_url, att.id
       ORDER BY a.assigned_at DESC
       `,
       [req.user.id]
@@ -111,6 +126,8 @@ async function myAssignments(req, res, next) {
       assigned_at: r.assigned_at,
       updated_at: r.updated_at,
       due_at: r.due_at,
+      scheduled_from: r.scheduled_from,
+      scheduled_till: r.scheduled_till,
       status: r.assignment_status,
       attempt_id: r.attempt_id,
       quiz: {
@@ -119,7 +136,6 @@ async function myAssignments(req, res, next) {
         description: r.description,
         total_time: r.total_time,
         quiz_type: r.quiz_type,
-        scheduled_at: r.scheduled_at,
         image_url: r.image_url,
         total_marks: Number(r.total_marks)
       }

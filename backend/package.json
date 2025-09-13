@@ -6,9 +6,15 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "init-db": "node scripts/init_db.js",
-    "seed-db": "node scripts/seed_db.js"
+    "seed-db": "node scripts/seed_db.js",
+    "test-scheduled-quiz": "node scripts/test_scheduled_quiz.js",
+    "test-websocket": "node scripts/test_websocket.js",
+    "test-quiz-recovery": "node scripts/test_quiz_recovery.js",
+    "test-timer-restoration": "node scripts/test_timer_restoration.js",
+    "test-websocket-integration": "node scripts/test_websocket_integration.js"
   },
   "dependencies": {
+    "axios": "^1.11.0",
     "bcrypt": "^5.1.0",
     "body-parser": "^1.20.2",
     "cookie-parser": "^1.4.7",
@@ -19,7 +25,10 @@
     "joi": "^17.9.2",
     "jsonwebtoken": "^9.0.0",
     "morgan": "^1.10.0",
+    "node-cron": "^4.2.1",
     "pg": "^8.11.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.1",
     "swagger-jsdoc": "^6.2.8",
     "swagger-ui-express": "^4.6.3",
     "uuid": "^9.0.0"

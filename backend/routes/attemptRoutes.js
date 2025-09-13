@@ -6,40 +6,24 @@ const { protect, authorizeRoles } = require('../middlewares/authMiddleware');
 // All attempt routes require authentication
 router.use(protect);
 
-// Student: Start a new attempt
-router.post('/start',
-  authorizeRoles('student'),
-  attemptController.startAttempt
-);
+// Keep only minimal REST endpoints; socket handles start/sync
 
-// Student: Sync attempt state
-router.patch('/:id/sync',
-  authorizeRoles('student'),
-  attemptController.syncAttempt
-);
-
-// Student: Submit attempt
+// Submit attempt
 router.post('/:id/submit',
   authorizeRoles('student'),
   attemptController.submitAttempt
 );
 
-// Student: Get my attempts
+// Get my attempts (used in dashboard)
 router.get('/my',
   authorizeRoles('student'),
   attemptController.getMyAttempts
 );
 
-// Student/Teacher/Admin: Get attempt details
+// Get attempt details (for resume/results) — keep AFTER '/my'
 router.get('/:id',
   authorizeRoles('student', 'teacher', 'admin'),
   attemptController.getAttempt
-);
-
-// Teacher/Admin: Reset attempt
-router.post('/reset',
-  authorizeRoles('teacher', 'admin'),
-  attemptController.resetAttempt
 );
 
 module.exports = router;

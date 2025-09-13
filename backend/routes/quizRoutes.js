@@ -11,7 +11,6 @@ const baseQuizSchema = Joi.object({
   description: Joi.string().allow(null, '').optional(),
   total_time: Joi.number().integer().optional(),
   quiz_type: Joi.string().valid('anytime', 'scheduled'),
-  scheduled_at: Joi.date().allow(null).optional(),
   image_url: Joi.alternatives().try(
     Joi.string().uri(),
     Joi.string().allow(''),

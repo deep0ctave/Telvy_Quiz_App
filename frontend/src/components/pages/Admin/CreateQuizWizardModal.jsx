@@ -14,7 +14,6 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
     quiz_type: "anytime",
     difficulty: "medium",
     tags: [],
-    scheduled_at: null,
   });
 
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -23,6 +22,8 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
     class: "", 
     role: "student" 
   });
+  const [scheduledFrom, setScheduledFrom] = useState("");
+  const [scheduledTill, setScheduledTill] = useState("");
 
   // Fetch users on component mount
   useEffect(() => {
@@ -43,13 +44,7 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
 
   const handleInputChange = (e) => {
     const { name, value } = e.target;
-    
-    // If changing quiz type to anytime, clear scheduled_at
-    if (name === 'quiz_type' && value === 'anytime') {
-      setQuizData({ ...quizData, [name]: value, scheduled_at: null });
-    } else {
-      setQuizData({ ...quizData, [name]: value });
-    }
+    setQuizData({ ...quizData, [name]: value });
   };
 
   const handleTagsChange = (e) => {
@@ -93,33 +88,30 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
       return;
     }
 
-    // Validate scheduled_at for scheduled quizzes
-    if (quizData.quiz_type === 'scheduled' && !quizData.scheduled_at) {
-      toast.error("Scheduled date is required for scheduled quizzes");
-      return;
+    // Validate schedule window if provided
+    if (scheduledFrom) {
+      const from = new Date(scheduledFrom);
+      if (isNaN(from.getTime())) {
+        toast.error("Invalid 'Scheduled from' date/time");
+        return;
+      }
+      if (scheduledTill) {
+        const till = new Date(scheduledTill);
+        if (isNaN(till.getTime())) {
+          toast.error("Invalid 'Scheduled till' date/time");
+          return;
+        }
+        if (till < from) {
+          toast.error("'Scheduled till' must be after 'Scheduled from'");
+          return;
+        }
+      }
     }
 
     setLoading(true);
     try {
-      // Prepare quiz data with proper date formatting
-      let scheduledAt = null;
-      if (quizData.quiz_type === 'scheduled' && quizData.scheduled_at && quizData.scheduled_at.trim() !== '') {
-        try {
-          const date = new Date(quizData.scheduled_at);
-          if (isNaN(date.getTime())) {
-            throw new Error('Invalid date');
-          }
-          scheduledAt = date.toISOString();
-        } catch (error) {
-          console.error('Invalid scheduled date:', quizData.scheduled_at);
-          toast.error("Invalid scheduled date format");
-          return;
-        }
-      }
-
       const quizPayload = {
         ...quizData,
-        scheduled_at: scheduledAt,
         image_url: quizData.image_url?.trim() || null,
         description: quizData.description?.trim() || null
       };
@@ -133,14 +125,15 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
       const questionIds = selectedQuestions.map(q => q.id);
       await setQuizQuestions(quizId, questionIds);
 
-              // Assign quiz to selected users
-        if (selectedUsers.length > 0) {
-          await assignQuizzes({
-            quiz_id: quizId,
-            student_ids: selectedUsers,
-            due_at: scheduledAt
-          });
-        }
+      // Assign quiz to selected users with optional schedule
+      if (selectedUsers.length > 0) {
+        await assignQuizzes({
+          quiz_id: quizId,
+          student_ids: selectedUsers,
+          scheduled_from: scheduledFrom ? new Date(scheduledFrom).toISOString() : null,
+          scheduled_till: scheduledTill ? new Date(scheduledTill).toISOString() : null
+        });
+      }
 
       toast.success(`Quiz "${quizData.title}" created successfully!`);
       onClose();
@@ -154,9 +147,10 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
         quiz_type: "anytime",
         difficulty: "medium",
         tags: [],
-        scheduled_at: null,
       });
       setSelectedUsers([]);
+      setScheduledFrom("");
+      setScheduledTill("");
       setStep(1);
     } catch (error) {
       console.error("Failed to create quiz:", error);
@@ -210,20 +204,6 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
                   placeholder="Enter quiz title" 
                   className="input input-bordered w-full" 
                 />
-              </div>
-              <div>
-                <label className="label">
-                  <span className="label-text">Quiz Type</span>
-                </label>
-                <select 
-                  name="quiz_type" 
-                  value={quizData.quiz_type} 
-                  onChange={handleInputChange} 
-                  className="select select-bordered w-full"
-                >
-                  <option value="anytime">Anytime</option>
-                  <option value="scheduled">Scheduled</option>
-                </select>
               </div>
             </div>
 
@@ -284,27 +264,7 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
               </div>
             </div>
 
-            {quizData.quiz_type === 'scheduled' && (
-              <div>
-                <label className="label">
-                  <span className="label-text">Scheduled At *</span>
-                </label>
-                <input 
-                  name="scheduled_at" 
-                  type="datetime-local" 
-                  value={quizData.scheduled_at || ''} 
-                  onChange={handleInputChange} 
-                  min={new Date().toISOString().slice(0, 16)}
-                  className="input input-bordered w-full" 
-                  required
-                />
-                <label className="label">
-                  <span className="label-text-alt text-base-content/60">
-                    Must be a future date and time
-                  </span>
-                </label>
-              </div>
-            )}
+            {/* No scheduled date/time here; scheduling belongs to assignments */}
 
             <div>
               <label className="label">
@@ -342,6 +302,51 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
         {/* Step 2 – Assign Users */}
         {step === 2 && (
           <div className="space-y-4">
+            {/* Quiz type now selected during assignment step */}
+            <div>
+              <label className="label">
+                <span className="label-text">Quiz Type</span>
+              </label>
+              <select 
+                name="quiz_type" 
+                value={quizData.quiz_type} 
+                onChange={handleInputChange} 
+                className="select select-bordered w-full"
+              >
+                <option value="anytime">Anytime</option>
+                <option value="scheduled">Scheduled</option>
+              </select>
+            </div>
+            {/* Optional schedule window for assignments, only if scheduled */}
+            {quizData.quiz_type === 'scheduled' && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">
+                    <span className="label-text">Scheduled from</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="input input-bordered w-full"
+                    value={scheduledFrom}
+                    onChange={(e) => setScheduledFrom(e.target.value)}
+                    min={new Date().toISOString().slice(0,16)}
+                  />
+                </div>
+                <div>
+                  <label className="label">
+                    <span className="label-text">Scheduled till (optional)</span>
+                  </label>
+                  <input
+                    type="datetime-local"
+                    className="input input-bordered w-full"
+                    value={scheduledTill}
+                    onChange={(e) => setScheduledTill(e.target.value)}
+                    min={scheduledFrom || new Date().toISOString().slice(0,16)}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="grid grid-cols-3 gap-4">
               <div>
                 <label className="label">
@@ -456,9 +461,6 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
                   <p><strong>Time Limit:</strong> {quizData.total_time} minutes</p>
                   <p><strong>Difficulty:</strong> {quizData.difficulty}</p>
                   <p><strong>Tags:</strong> {quizData.tags.length > 0 ? quizData.tags.join(', ') : 'None'}</p>
-                  {quizData.quiz_type === 'scheduled' && quizData.scheduled_at && (
-                    <p><strong>Scheduled:</strong> {new Date(quizData.scheduled_at).toLocaleString()}</p>
-                  )}
                 </div>
               </div>
               
@@ -519,30 +521,15 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
               Back
             </button>
           )}
-                     {step < 3 && (
-             <button 
-               className="btn btn-primary" 
-               onClick={() => {
-                 // Validate scheduled date before proceeding
-                 if (step === 1 && quizData.quiz_type === 'scheduled') {
-                   if (!quizData.scheduled_at) {
-                     toast.error("Please select a scheduled date and time");
-                     return;
-                   }
-                   const selectedDate = new Date(quizData.scheduled_at);
-                   const now = new Date();
-                   if (selectedDate <= now) {
-                     toast.error("Scheduled date must be in the future");
-                     return;
-                   }
-                 }
-                 setStep(step + 1);
-               }}
-               disabled={loading}
-             >
-               Next
-             </button>
-           )}
+          {step < 3 && (
+            <button 
+              className="btn btn-primary" 
+              onClick={() => setStep(step + 1)}
+              disabled={loading}
+            >
+              Next
+            </button>
+          )}
           {step === 3 && (
             <button 
               className="btn btn-primary" 

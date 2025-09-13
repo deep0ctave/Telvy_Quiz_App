@@ -1,8 +1,8 @@
 // File: components/pages/Student/LiveAttempt.jsx
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import { useParams, useNavigate, useLocation } from "react-router-dom";
-import { syncAttempt, submitAttempt, getAttemptById } from "../../../services/api";
 import { toast } from 'react-toastify';
+import { connect as socketConnect, startTimer as socketStartTimer, on as socketOn, off as socketOff, syncState as socketSyncState, syncStateAck as socketSyncStateAck, getAttempt as socketGetAttempt, submitAttemptSocket } from '../../../services/socketClient';
 import { Loader2, AlertTriangle, CheckCircle, Clock } from "lucide-react";
 
 const LiveAttempt = () => {
@@ -11,23 +11,34 @@ const LiveAttempt = () => {
   const { state } = useLocation();
   const newAttemptData = state?.attempt; // Data passed for a new attempt
 
+  // Socket-only mode for attempts
+
   // Core state
   const [questions, setQuestions] = useState([]);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
   const [answers, setAnswers] = useState({}); // Stores answers by question ID
+  const answersRef = useRef({}); // Keep a ref to track answers
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [lastSyncTime, setLastSyncTime] = useState(null);
   const [isResuming, setIsResuming] = useState(false);
+  const [quizData, setQuizData] = useState(null);
+  const [attemptStatus, setAttemptStatus] = useState('in_progress');
+  const [readOnly, setReadOnly] = useState(false);
 
-  // Simple quiz timer (total time for entire quiz)
-  const [quizTimeLeft, setQuizTimeLeft] = useState(300); // 5 minutes total
+  // Fallback timer for when WebSocket is not ready
+  const [fallbackTimer, setFallbackTimer] = useState(0);
+  const [totalTime, setTotalTime] = useState(0);
   const [startTime, setStartTime] = useState(null);
 
   // Refs
   const syncRef = useRef(null);
-  const quizTimerRef = useRef(null);
+  const debounceRef = useRef(null);
+  const lastIndexChangeAtRef = useRef(0);
+  const lastAnswerChangeAtRef = useRef(new Map()); // questionId -> ts
+  const tabIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
+  const bcRef = useRef(null);
 
   // Helper function to normalize options format
   const normalizeOptions = (options) => {
@@ -51,58 +62,35 @@ const LiveAttempt = () => {
     return `${minutes}:${secs.toString().padStart(2, '0')}`;
   };
 
-  // Sync function
-  const handleSync = async () => {
-    if (questions.length === 0 || syncing) return;
-
-    try {
-      setSyncing(true);
-      
-      const questionsWithAnswers = questions.map(q => ({
-        id: q.id,
-        question_text: q.question_text,
-        question_type: q.question_type,
-        options: q.options,
-        answer: answers[q.id] || null
-      }));
-
-      const state = {
-        quiz_id: parseInt(attemptId),
-        questions: questionsWithAnswers
-      };
-
-      console.log('[DEBUG] LiveAttempt - Syncing attempt:', attemptId);
-      await syncAttempt(attemptId, state);
-      setLastSyncTime(new Date());
-    } catch (err) {
-      console.error('[DEBUG] LiveAttempt - Sync failed:', err);
-    } finally {
-      setSyncing(false);
-    }
-  };
-
-  // Submit function
+  // Submit via socket
   const handleSubmit = async () => {
     if (submitting) return;
     
+    // Guard: Don't submit if attempt is not in progress
+    if (attemptStatus !== 'in_progress') {
+      console.log('[DEBUG] LiveAttempt - Cannot submit: attempt not in progress, status:', attemptStatus);
+      return;
+    }
+    
     try {
       setSubmitting(true);
-      console.log('[DEBUG] LiveAttempt - Submitting quiz');
-      
-      // Ensure a final sync before submitting
-      await handleSync(); 
-
-      const result = await submitAttempt(attemptId);
-      console.log('[DEBUG] LiveAttempt - Quiz submitted:', result);
+      // Final socket sync then submit
+      // Ensure last state is persisted before submitting
+      await performSync(true);
+      const result = await submitAttemptSocket(parseInt(attemptId));
       
       // Create a detailed success message
-      let successMessage = `Quiz submitted! Score: ${result.score}% (${result.correct}/${result.total_questions} correct)`;
+      const roundedScore = Math.round(parseFloat(result.score) * 100) / 100;
+      let successMessage = `Quiz submitted! Score: ${roundedScore}% (${result.correct}/${result.total_questions} correct)`;
       if (result.unanswered > 0) {
         successMessage += ` - ${result.unanswered} unanswered`;
       }
       
       toast.success(successMessage);
       navigate(`/attempts/result/${attemptId}`);
+      // Mark as completed and stop syncing
+      setAttemptStatus('completed');
+      if (syncRef.current) clearInterval(syncRef.current);
     } catch (err) {
       console.error('[DEBUG] LiveAttempt - Submission failed:', err);
       toast.error('Failed to submit quiz');
@@ -111,97 +99,220 @@ const LiveAttempt = () => {
     }
   };
 
+  // Simple sync function - Socket only
+  const performSync = useCallback(async (answersToSync) => {
+    if (questions.length === 0 || syncing) return;
+    if (attemptStatus !== 'in_progress') return;
+    
+    const answersToUse = answersToSync || answersRef.current;
+    
+    const questionsWithAnswers = questions.map(q => ({
+      id: q.id,
+      question_text: q.question_text,
+      question_type: q.question_type,
+      options: q.options,
+      image_url: q.image_url,
+      answer: answersToUse[q.id] || null
+    }));
+    
+    const state = {
+      quiz_id: parseInt(attemptId),
+      questions: questionsWithAnswers,
+      current_question_index: currentQuestionIndex,
+      current_question_id: questions[currentQuestionIndex]?.id
+    };
+    
+    try {
+      setSyncing(true);
+      await socketSyncStateAck(parseInt(attemptId), state, 4000, tabIdRef.current);
+      setLastSyncTime(new Date());
+    } catch (error) {
+      console.error('Sync failed:', error);
+    } finally {
+      setSyncing(false);
+    }
+  }, [questions, syncing, attemptId, currentQuestionIndex, attemptStatus]);
+
   // Handle answer selection
   const handleAnswerSelect = (questionId, value) => {
-    console.log('[DEBUG] LiveAttempt - Answer selected:', { questionId, value });
-    
-    setAnswers(prevAnswers => ({
+    setAnswers(prevAnswers => {
+      const newAnswers = {
       ...prevAnswers,
       [questionId]: value
-    }));
+      };
 
-    // Sync immediately after answer selection
-    setTimeout(() => handleSync(), 100);
+      // Update ref and sync immediately
+      answersRef.current = newAnswers;
+      // Track per-question change time
+      lastAnswerChangeAtRef.current.set(questionId, Date.now());
+      // Debounce sync
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      debounceRef.current = setTimeout(() => {
+        performSync(newAnswers);
+      }, 400);
+
+      return newAnswers;
+    });
   };
 
   // Simple navigation functions
+  const syncIndex = async (newIndex) => {
+    try {
+      const questionsWithAnswers = questions.map(q => ({
+        id: q.id,
+        question_text: q.question_text,
+        question_type: q.question_type,
+        options: q.options,
+        image_url: q.image_url,
+        answer: (answersRef.current || {})[q.id] || null
+      }));
+      const state = {
+        quiz_id: parseInt(attemptId),
+        questions: questionsWithAnswers,
+        current_question_index: newIndex,
+        current_question_id: questions[newIndex]?.id
+      };
+      await socketSyncStateAck(parseInt(attemptId), state, 4000, tabIdRef.current);
+      setLastSyncTime(new Date());
+    } catch {}
+  };
+
   const goToNextQuestion = () => {
     if (currentQuestionIndex < questions.length - 1) {
-      setCurrentQuestionIndex(currentQuestionIndex + 1);
+      const nextIdx = currentQuestionIndex + 1;
+      setCurrentQuestionIndex(nextIdx);
+      lastIndexChangeAtRef.current = Date.now();
+      syncIndex(nextIdx);
     }
   };
 
   const goToPreviousQuestion = () => {
     if (currentQuestionIndex > 0) {
-      setCurrentQuestionIndex(currentQuestionIndex - 1);
+      const prevIdx = currentQuestionIndex - 1;
+      setCurrentQuestionIndex(prevIdx);
+      lastIndexChangeAtRef.current = Date.now();
+      syncIndex(prevIdx);
     }
   };
 
-  // Load attempt data
+  // Load attempt data via socket
+  useEffect(() => {
+    // Multi-tab coordination: claim lock via BroadcastChannel
+    try {
+      bcRef.current = new BroadcastChannel('attempt-lock');
+      const myTabId = tabIdRef.current;
+      let hasOwner = false;
+      const onMsg = (e) => {
+        const msg = e.data || {};
+        if (msg.type === 'claim' && msg.attemptId === attemptId) {
+          // Another tab claims ownership; respond with my presence
+          bcRef.current.postMessage({ type: 'present', attemptId, tabId: myTabId });
+        } else if (msg.type === 'owner' && msg.attemptId === attemptId && msg.tabId !== myTabId) {
+          hasOwner = true;
+          // Keep both tabs editable; no readOnly enforcement
+        } else if (msg.type === 'present' && msg.attemptId === attemptId && msg.tabId !== myTabId) {
+          hasOwner = true;
+          // Keep both tabs editable; no readOnly enforcement
+        }
+      };
+      bcRef.current.onmessage = onMsg;
+      // Claim ownership
+      bcRef.current.postMessage({ type: 'claim', attemptId, tabId: myTabId });
+      // If no one responds within 300ms, become owner
+      const ownerTimer = setTimeout(() => {
+        if (!hasOwner) {
+          setReadOnly(false);
+          bcRef.current.postMessage({ type: 'owner', attemptId, tabId: myTabId });
+        }
+      }, 300);
+      // Cleanup
+      return () => {
+        try { clearTimeout(ownerTimer); } catch {}
+        try { bcRef.current && bcRef.current.close(); } catch {}
+      };
+    } catch {}
+  }, [attemptId]);
+
   useEffect(() => {
     const loadAttempt = async () => {
       setLoading(true);
       try {
         let attemptData;
         
-        if (newAttemptData && newAttemptData.questions) {
-          // New attempt - use data from navigation state
-          attemptData = newAttemptData;
-          console.log('[DEBUG] LiveAttempt - Using new attempt data');
+        if (!newAttemptData) {
+          const token = localStorage.getItem('accessToken');
+          socketConnect(token);
+          attemptData = await socketGetAttempt(parseInt(attemptId));
         } else {
-          // Existing attempt - fetch from API
-          attemptData = await getAttemptById(attemptId);
-          console.log('[DEBUG] LiveAttempt - Fetched existing attempt data');
+          attemptData = newAttemptData;
         }
         
         // Check if attempt is already submitted
-        if (attemptData.status === 'submitted' || attemptData.finished_at) {
+        if (attemptData.status === 'completed' || attemptData.finished_at) {
           console.log('[DEBUG] LiveAttempt - Attempt already submitted, redirecting to results');
           navigate(`/attempts/result/${attemptId}`);
           return;
         }
+        setAttemptStatus(attemptData.status || 'in_progress');
         
-        // Get questions from appropriate source
+        
+        // Prefer saved state from DB; fallback to raw quiz questions
         let questionsData;
-        if (attemptData.questions) {
-          questionsData = attemptData.questions;
-          console.log('[DEBUG] LiveAttempt - Using questions from new attempt response');
-        } else if (attemptData.state?.questions) {
+        if (attemptData.state && Array.isArray(attemptData.state.questions)) {
           questionsData = attemptData.state.questions;
-          console.log('[DEBUG] LiveAttempt - Using questions from attempt state');
+        } else if (Array.isArray(attemptData.questions)) {
+          questionsData = attemptData.questions;
         } else {
           questionsData = [];
-          console.warn('[DEBUG] LiveAttempt - No questions found in attempt data');
         }
         
-        // Set questions
+        // Set questions and quiz data
         setQuestions(questionsData);
-        console.log('[DEBUG] LiveAttempt - Set questions:', questionsData.length, 'questions');
+        setQuizData(attemptData.quiz);
         
-        // Initialize timer
-        const quizStartTime = attemptData.started_at ? new Date(attemptData.started_at) : new Date();
-        setStartTime(quizStartTime);
+        // Set start time and total time for fallback timer
+        if (attemptData.started_at) {
+          setStartTime(new Date(attemptData.started_at));
+        } else {
+          setStartTime(new Date());
+        }
+        // Use server-provided total_time if available
+        const tt = attemptData.total_time || attemptData.quiz?.total_time || 300;
+        setTotalTime(tt);
+        setFallbackTimer(typeof attemptData.remaining_time === 'number' ? attemptData.remaining_time : tt);
+        // If remaining time is explicitly provided and is zero, redirect to results
+        if (attemptData.remaining_time === 0) {
+          navigate(`/attempts/result/${attemptId}`);
+          return;
+        }
         
-        console.log('[DEBUG] LiveAttempt - Timer initialized:', {
-          startTime: quizStartTime,
-          questionsCount: questionsData.length
-        });
+        // Load existing answers from database (use the same source as questionsData)
+        const questionsToCheck = Array.isArray(questionsData) ? questionsData : [];
         
-        // Load existing answers if resuming
-        if (attemptData.state?.questions) {
           const existingAnswers = {};
-          attemptData.state.questions.forEach(q => {
-            if (q.answer !== null) {
+        questionsToCheck.forEach(q => {
+          if (q.answer !== null && q.answer !== undefined) {
               existingAnswers[q.id] = q.answer;
             }
           });
+        
+        if (Object.keys(existingAnswers).length > 0) {
           setAnswers(existingAnswers);
-          console.log('[DEBUG] LiveAttempt - Loaded existing answers:', existingAnswers);
-          setIsResuming(true);
+          answersRef.current = existingAnswers;
           toast.success('Resumed previous quiz attempt');
         }
+
+        // Restore current question index if saved
+        const savedIndex = attemptData.state?.current_question_index;
+        const savedId = attemptData.state?.current_question_id;
+        if (Number.isInteger(savedIndex) && savedIndex >= 0 && savedIndex < questionsData.length) {
+          setCurrentQuestionIndex(savedIndex);
+        } else if (savedId) {
+          const idx = questionsData.findIndex(q => q.id === savedId);
+          if (idx >= 0) setCurrentQuestionIndex(idx);
+        }
       } catch (err) {
-        console.error('[DEBUG] LiveAttempt - Failed to load attempt:', err);
+        console.error('Failed to load attempt:', err);
         toast.error('Failed to load quiz attempt.');
         navigate('/dashboard'); // Redirect to dashboard on error
       } finally {
@@ -212,66 +323,127 @@ const LiveAttempt = () => {
     loadAttempt();
   }, [attemptId, newAttemptData, navigate]);
 
-  // Set up quiz timer (simple countdown)
+  // No WebSocket timer expiry in REST-only mode
+
+  // Socket lifecycle: connect on mount, start timer, listen, disconnect on unmount
   useEffect(() => {
-    if (questions.length === 0) return;
-
-    console.log('[DEBUG] LiveAttempt - Setting up quiz timer');
-
-    // Clear any existing timer
-    if (quizTimerRef.current) clearInterval(quizTimerRef.current);
-
-    // Quiz timer that counts down
-    quizTimerRef.current = setInterval(() => {
-      setQuizTimeLeft(prev => {
-        if (prev <= 1) {
-          // Time's up - auto submit
-          console.log('[DEBUG] LiveAttempt - Quiz time expired, auto-submitting');
-          toast.error('Time is up! Submitting quiz automatically.');
-          handleSubmit();
-          return 0;
+    const token = localStorage.getItem('accessToken');
+    socketConnect(token);
+    const onAuth = async () => {
+      const idNum = parseInt(attemptId);
+      socketStartTimer(idNum);
+      try {
+        const attemptData = await socketGetAttempt(idNum);
+        // Apply server state and ensure room join via get_attempt
+        const questionsData = Array.isArray(attemptData?.state?.questions) ? attemptData.state.questions : [];
+        setQuestions(questionsData);
+        const newAnswers = {};
+        questionsData.forEach(q => { if (q.answer !== null && q.answer !== undefined) newAnswers[q.id] = q.answer; });
+        setAnswers(newAnswers);
+        answersRef.current = newAnswers;
+        if (Number.isInteger(attemptData?.state?.current_question_index)) {
+          setCurrentQuestionIndex(Math.min(Math.max(0, attemptData.state.current_question_index), questionsData.length - 1));
         }
-        return prev - 1;
-      });
-    }, 1000);
-
-    // Cleanup on unmount
-    return () => {
-      console.log('[DEBUG] LiveAttempt - Clearing quiz timer');
-      if (quizTimerRef.current) clearInterval(quizTimerRef.current);
+      } catch {}
     };
-  }, [questions.length]);
+    // Start when authenticated; also fallback-start shortly after connect
+    socketOn('authenticated', onAuth);
+    const t = setTimeout(onAuth, 500);
+
+    const handleTimer = ({ attempt_id, remaining_time, total_time }) => {
+      if (parseInt(attemptId) !== attempt_id) return;
+      setTotalTime(total_time || 300);
+      setFallbackTimer(remaining_time || 0);
+      // Server will handle auto-submission when timer expires
+    };
+
+    socketOn('timer_update', handleTimer);
+    const handleStateUpdate = ({ attempt_id, state, source }) => {
+      if (parseInt(attemptId) !== attempt_id) return;
+      if (source && source === tabIdRef.current) return;
+      // Apply server state
+      const questionsData = Array.isArray(state?.questions) ? state.questions : [];
+      setQuestions(questionsData);
+      // Merge answers with simple recency guard (500ms)
+      const now = Date.now();
+      const mergedAnswers = { ...answersRef.current };
+      questionsData.forEach(q => {
+        const incoming = q.answer;
+        if (incoming === null || incoming === undefined) return;
+        const lastLocal = lastAnswerChangeAtRef.current.get(q.id) || 0;
+        if (now - lastLocal > 500) {
+          mergedAnswers[q.id] = incoming;
+        }
+      });
+      setAnswers(mergedAnswers);
+      answersRef.current = mergedAnswers;
+      // Restore current index
+      if (Number.isInteger(state?.current_question_index)) {
+        if (Date.now() - lastIndexChangeAtRef.current > 500) {
+          setCurrentQuestionIndex(Math.min(Math.max(0, state.current_question_index), questionsData.length - 1));
+        }
+      }
+    };
+    socketOn('state_update', handleStateUpdate);
+    
+    const handleQuizSubmitted = ({ attempt_id, score, total_questions, correct, unanswered, auto_submitted }) => {
+      console.log('[QUIZ-SUBMITTED] Received event:', { attempt_id, score, total_questions, correct, unanswered, auto_submitted });
+      if (parseInt(attemptId) !== attempt_id) return;
+      if (auto_submitted) {
+        console.log('[QUIZ-SUBMITTED] Auto-submitted, showing toast and navigating...');
+        toast.info('Quiz was automatically submitted due to time expiration.');
+        // Add a longer delay to ensure database is fully updated via REST API
+        setTimeout(() => {
+          console.log(`[QUIZ-SUBMITTED] Navigating to /attempts/result/${attempt_id}`);
+          navigate(`/attempts/result/${attempt_id}`);
+        }, 3000);
+      } else {
+        console.log('[QUIZ-SUBMITTED] Manual submission, navigating immediately...');
+        // Navigate immediately for manual submissions
+        navigate(`/attempts/result/${attempt_id}`);
+      }
+    };
+    
+    socketOn('quiz_submitted', handleQuizSubmitted);
+    
+    return () => {
+      socketOff('timer_update', handleTimer);
+      socketOff('state_update', handleStateUpdate);
+      socketOff('authenticated', onAuth);
+      socketOff('quiz_submitted', handleQuizSubmitted);
+      clearTimeout(t);
+    };
+  }, [attemptId, attemptStatus]);
 
   // Set up periodic sync
   useEffect(() => {
     if (questions.length === 0) return;
-
-    console.log('[DEBUG] LiveAttempt - Setting up sync with', questions.length, 'questions');
 
     // Clear any existing intervals
     if (syncRef.current) clearInterval(syncRef.current);
 
     // Periodic sync every 5 seconds
     syncRef.current = setInterval(() => {
-      handleSync();
+      performSync();
     }, 5000);
 
     // Cleanup on unmount
     return () => {
-      console.log('[DEBUG] LiveAttempt - Clearing intervals');
       if (syncRef.current) clearInterval(syncRef.current);
     };
   }, [questions.length]);
 
+  // Flush a final sync on unmount/navigation
+  useEffect(() => {
+    return () => {
+      if (questions.length > 0 && attemptStatus === 'in_progress') {
+        try { performSync(); } catch (e) {}
+      }
+    };
+  }, [questions.length, attemptStatus, performSync]);
+
   const currentQuestion = questions[currentQuestionIndex];
 
-  console.log('[DEBUG] LiveAttempt - Render state:', {
-    currentQuestionIndex,
-    totalQuestions: questions.length,
-    currentQuestionId: currentQuestion?.id,
-    answersCount: Object.keys(answers).length,
-    quizTimeLeft
-  });
 
   if (loading) {
     return (
@@ -312,8 +484,8 @@ const LiveAttempt = () => {
         {/* Timer Display */}
         <div className="flex items-center gap-2">
           <Clock className="w-5 h-5 text-warning" />
-          <span className={`font-mono text-lg ${quizTimeLeft <= 60 ? 'text-error' : 'text-warning'}`}>
-            {formatTime(quizTimeLeft)}
+          <span className={`font-mono text-lg ${fallbackTimer <= 60 ? 'text-error' : 'text-warning'}`}>
+            {formatTime(fallbackTimer)}
           </span>
         </div>
       </div>
@@ -321,13 +493,19 @@ const LiveAttempt = () => {
       {/* Timer Progress Bar */}
       <div className="mb-4">
         <progress
-          className={`progress w-full ${quizTimeLeft <= 60 ? 'progress-error' : 'progress-warning'}`}
-          value={quizTimeLeft}
-          max={300}
+          className={`progress w-full ${fallbackTimer <= 60 ? 'progress-error' : 'progress-warning'}`}
+          value={((Math.max(totalTime, 1) - fallbackTimer) / Math.max(totalTime, 1)) * 100}
+          max={100}
         />
         <div className="text-center text-sm text-gray-600 mt-1">
-          Quiz time remaining: {formatTime(quizTimeLeft)}
+          Quiz time remaining: {formatTime(fallbackTimer)} (Server-controlled)
         </div>
+      </div>
+
+      {/* Mode Status */}
+      <div className="alert alert-info mb-4">
+        <AlertTriangle className="w-4 h-4" />
+        <span>Using WebSocket mode - auto-save enabled</span>
       </div>
 
       {/* Sync Status */}
@@ -357,6 +535,20 @@ const LiveAttempt = () => {
                 Question {currentQuestionIndex + 1} of {questions.length}
               </h2>
               <p className="text-lg">{currentQuestion.question_text}</p>
+              
+              {/* Question Image */}
+              {currentQuestion.image_url && (
+                <div className="my-4">
+                  <img 
+                    src={currentQuestion.image_url} 
+                    alt="Question image" 
+                    className="max-w-full h-48 object-contain rounded border mx-auto"
+                    onError={(e) => {
+                      e.target.style.display = 'none';
+                    }}
+                  />
+                </div>
+              )}
 
               <div className="space-y-2">
                 {/* MCQ and True/False */}
@@ -499,7 +691,7 @@ const LiveAttempt = () => {
                         ? 'btn-secondary'
                         : 'btn-outline'
                     }`}
-                    onClick={() => setCurrentQuestionIndex(idx)}
+                    onClick={() => { setCurrentQuestionIndex(idx); syncIndex(idx); }}
                   >
                     {idx + 1}
                   </button>

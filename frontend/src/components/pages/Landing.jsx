@@ -87,7 +87,7 @@ function LandingPage() {
       {/* Text Section */}
       <div className="fade-in">
         <h1 className="text-4xl sm:text-5xl font-extrabold tracking-tight text-primary ">
-          Welcome to <span className="text-primary">Telvy</span>
+          Welcome to <span className="text-primary">Schoolmela</span>
         </h1>
         <p className="mt-4 text-lg text-base-content/80 max-w-xl">
           Play. Learn. Compete. The smarter way to quiz.

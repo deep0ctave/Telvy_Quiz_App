@@ -6,7 +6,8 @@ import DeleteQuestionModal from "./DeleteQuestionModal";
 import ViewQuestionModal from "./ViewQuestionModal";
 import CreateQuizFromQuestionsModal from "./CreateQuizFromQuestionsModal";
 import CreateQuizWizardModal from "./CreateQuizWizardModal";
-import { getAllQuestionsWithDetails, createBulkQuestions } from "../../../services/api";
+import { getAllQuestionsWithDetails, createBulkQuestions, deleteQuestionById } from "../../../services/api";
+import { toast } from "react-hot-toast";
 
 const QuestionList = () => {
   const [questions, setQuestions] = useState([]);
@@ -61,16 +62,28 @@ const QuestionList = () => {
       return matchesSearch && matchesDifficulty && matchesType && matchesTimeLimit && matchesTags;
     });
 
-    if (sortField) {
-      result.sort((a, b) => {
+    // Sort by selection status first (selected questions on top), then by other criteria
+    result.sort((a, b) => {
+      const aSelected = selected.includes(a.id);
+      const bSelected = selected.includes(b.id);
+      
+      // If one is selected and the other isn't, selected comes first
+      if (aSelected && !bSelected) return -1;
+      if (!aSelected && bSelected) return 1;
+      
+      // If both have same selection status, apply normal sorting
+      if (sortField) {
         if (a[sortField] < b[sortField]) return sortDirection === "asc" ? -1 : 1;
         if (a[sortField] > b[sortField]) return sortDirection === "asc" ? 1 : -1;
         return 0;
-      });
-    }
+      }
+      
+      // Default sort by ID if no sort field specified
+      return a.id - b.id;
+    });
 
     setFiltered(result);
-  }, [search, difficultyFilter, typeFilter, timeLimitFilter, selectedTags, questions, sortField, sortDirection]);
+  }, [search, difficultyFilter, typeFilter, timeLimitFilter, selectedTags, questions, sortField, sortDirection, selected]);
 
   const toggleSelect = (id) => {
     setSelected((prev) =>
@@ -78,10 +91,17 @@ const QuestionList = () => {
     );
   };
 
-  const handleDelete = (id) => {
-    setQuestions((prev) => prev.filter((q) => q.id !== id));
-    setSelected((prev) => prev.filter((qid) => qid !== id));
-    setDeleteTarget(null);
+  const handleDelete = async (id) => {
+    try {
+      await deleteQuestionById(id);
+      setQuestions((prev) => prev.filter((q) => q.id !== id));
+      setSelected((prev) => prev.filter((qid) => qid !== id));
+      setDeleteTarget(null);
+      toast.success('Question deleted successfully!');
+    } catch (error) {
+      console.error('Failed to delete question:', error);
+      toast.error('Failed to delete question: ' + (error?.response?.data?.error || error.message));
+    }
   };
 
   const handleCreateQuiz = () => {
@@ -163,7 +183,14 @@ const QuestionList = () => {
       alert("Please enter a valid number of questions to select.");
       return;
     }
-    const shuffled = [...filtered].sort(() => 0.5 - Math.random());
+    
+    // Use Fisher-Yates shuffle for better randomness
+    const shuffled = [...filtered];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    
     const selectedIds = shuffled.slice(0, count).map((q) => q.id);
     setSelected(Array.from(new Set([...selected, ...selectedIds])));
   };
@@ -343,21 +370,21 @@ const QuestionList = () => {
                    </td>
                   <td className="flex gap-2">
                     <button 
-                      className="btn btn-square btn-sm btn-ghost" 
+                      className="btn btn-sm btn-primary" 
                       onClick={() => setViewTarget(q)}
                       title="View Question"
                     >
                       <Eye className="w-4 h-4" />
                     </button>
                     <button 
-                      className="btn btn-square btn-sm btn-info" 
+                      className="btn btn-sm btn-info" 
                       onClick={() => setEditTarget(q)}
                       title="Edit Question"
                     >
                       <Pencil className="w-4 h-4" />
                     </button>
                     <button 
-                      className="btn btn-square btn-sm btn-error" 
+                      className="btn btn-sm btn-error" 
                       onClick={() => setDeleteTarget(q)}
                       title="Delete Question"
                     >

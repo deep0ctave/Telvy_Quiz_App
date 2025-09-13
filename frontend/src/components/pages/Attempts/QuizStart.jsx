@@ -2,7 +2,8 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { CalendarDays, Clock10, Tags, CircleUser, Loader2 } from 'lucide-react';
-import { startAttempt, getMyAttempts } from '../../../services/api';
+import { getMyAttempts, getAttemptById } from '../../../services/api';
+import { connect as socketConnect, startQuiz as socketStartQuiz } from '../../../services/socketClient';
 import { toast } from 'react-hot-toast';
 
 const QuizStart = () => {
@@ -12,6 +13,8 @@ const QuizStart = () => {
   const assignment = state?.assignment;
   const [loading, setLoading] = useState(false);
   const [currentAttempt, setCurrentAttempt] = useState(null);
+  
+  // Socket mode for starting attempts
 
   if (!assignment) {
     return <div className="p-6">Assignment not found or data missing.</div>;
@@ -28,7 +31,7 @@ const QuizStart = () => {
     assignment_status: assignment?.status
   });
 
-  // Check for existing attempts to determine actual state
+  // Check for existing attempts to determine actual state (REST for reliability)
   useEffect(() => {
     const checkAttempts = async () => {
       try {
@@ -36,12 +39,37 @@ const QuizStart = () => {
         console.log('[DEBUG] QuizStart - Assignment data:', assignment);
         
         const attempts = await getMyAttempts();
-        console.log('[DEBUG] QuizStart - All attempts:', attempts);
-        
-        const quizAttempt = attempts.find(att => att.quiz_id === quiz.id);
-        if (quizAttempt) {
-          setCurrentAttempt(quizAttempt);
-          console.log('[DEBUG] QuizStart - Found existing attempt:', quizAttempt);
+        const related = attempts.filter(att => att.quiz_id === quiz.id);
+        // Re-verify statuses via detail fetch (handles any stale listings)
+        const verified = await Promise.all(related.map(async (att) => {
+          try {
+            const full = await getAttemptById(att.id);
+            return full;
+          } catch {
+            return att;
+          }
+        }));
+        // Prefer in_progress; otherwise most recent completed
+        const inProgress = verified.find(att => att.status === 'in_progress');
+        let chosen = inProgress || null;
+        if (!chosen) {
+          const completed = verified
+            .filter(att => att.status === 'completed')
+            .sort((a, b) => new Date(b.finished_at || 0) - new Date(a.finished_at || 0));
+          if (completed.length) chosen = completed[0];
+        }
+
+        // If assignment has attempt_id, verify its status too
+        if (!chosen && assignment.attempt_id) {
+          try {
+            const att = await getAttemptById(assignment.attempt_id);
+            if (att && att.quiz_id === quiz.id) chosen = att;
+          } catch {}
+        }
+
+        if (chosen) {
+          setCurrentAttempt(chosen);
+          console.log('[DEBUG] QuizStart - Chosen attempt:', chosen);
         } else {
           console.log('[DEBUG] QuizStart - No existing attempt found for quiz:', quiz.id);
         }
@@ -61,16 +89,9 @@ const QuizStart = () => {
   // Determine actual quiz state based on attempt status
   const getActualQuizState = () => {
     if (currentAttempt) {
-      if (currentAttempt.status === 'submitted') return 'completed';
+      if (currentAttempt.status === 'completed') return 'completed';
       if (currentAttempt.status === 'in_progress') return 'in_progress';
     }
-    
-    // Fallback: if assignment has attempt_id, it's likely in progress
-    if (assignment.attempt_id) {
-      console.log('[DEBUG] QuizStart - Assignment has attempt_id, treating as in_progress');
-      return 'in_progress';
-    }
-    
     return assignment.status;
   };
 
@@ -135,7 +156,7 @@ const QuizStart = () => {
       return;
     }
 
-    // Only call startAttempt for new attempts (assigned state)
+    // Only call socket start for new attempts (assigned state)
     setLoading(true);
     try {
       // Validate quiz.id is a valid number
@@ -146,12 +167,11 @@ const QuizStart = () => {
         return;
       }
       
-      console.log('[DEBUG] QuizStart - Starting new attempt for quiz:', quizId);
-      const result = await startAttempt(quizId);
-      console.log('[DEBUG] QuizStart - Attempt started successfully:', result);
-      
-      console.log('[DEBUG] QuizStart - New attempt, navigating to live quiz');
-      // New attempt
+      // Socket: start attempt
+      const token = localStorage.getItem('accessToken');
+      socketConnect(token);
+      const result = await socketStartQuiz(quizId);
+      console.log('[DEBUG] QuizStart - Socket attempt started:', result);
       navigate(`/attempts/live/${result.attempt_id}`, { 
         state: { 
           attempt: result,

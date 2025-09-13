@@ -5,6 +5,7 @@ export const loginUser = async ({ username, password, force = false }) => {
   const { accessToken, user } = res.data;
   console.log('Login response:', res.data);
   localStorage.setItem('accessToken', accessToken);
+  try { window.dispatchEvent(new CustomEvent('auth:token', { detail: { accessToken } })); } catch {}
   return user;
 };
 
@@ -15,6 +16,7 @@ export const logoutUser = async () => {
     console.error('[Logout Error]', err);
   } finally {
     localStorage.removeItem('accessToken');
+    try { window.dispatchEvent(new CustomEvent('auth:token', { detail: { accessToken: null } })); } catch {}
   }
 };
 
@@ -25,6 +27,7 @@ export const refreshToken = async () => {
   console.log('Refresh response:', res.data);
   if (accessToken) {
     localStorage.setItem('accessToken', accessToken);
+    try { window.dispatchEvent(new CustomEvent('auth:token', { detail: { accessToken } })); } catch {}
     return { accessToken, user };
   } else {
     throw new Error('Failed to refresh token');
@@ -54,7 +57,7 @@ export const registerUser = async (formData) => {
     class: formData.class,
     section: formData.section,
     password: formData.password,
-    phone: formData.phone,
+    phone: `${formData.phone_code || '+91'}${formData.phone}`,
   });
   return res.data;
 };
@@ -71,4 +74,8 @@ export const verifyOtp = async ({ phone, otp }) => {
 export const resendOtp = async (phone) => {
   const res = await api.post('/auth/otp/request', { phone });
   return res.data;
+};
+
+export const getToken = () => {
+  return localStorage.getItem('accessToken');
 };

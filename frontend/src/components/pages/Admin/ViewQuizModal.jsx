@@ -206,7 +206,7 @@ const ViewQuizModal = ({ quizId, onClose }) => {
                </label>
                <div className="space-y-4 max-h-96 overflow-y-auto">
                  {quiz.questions.map((question, index) => (
-                   <div key={question.id || index} className="p-4 border rounded-lg bg-base-50">
+                   <div key={question.id || index} className="p-4 border rounded-lg bg-base-200">
                      <div className="font-medium mb-2">
                        Q{index + 1}: {question.question_text}
                      </div>
@@ -233,7 +233,7 @@ const ViewQuizModal = ({ quizId, onClose }) => {
                                 <div 
                                   key={optionId || optIndex} 
                                   className={`p-2 rounded border ${
-                                    isCorrect ? 'bg-success/20 border-success' : 'bg-base-100'
+                                    isCorrect ? 'bg-success/20 border-success' : 'bg-base-300'
                                   }`}
                                 >
                                   <span className="font-mono text-sm mr-2">{optionId}.</span>

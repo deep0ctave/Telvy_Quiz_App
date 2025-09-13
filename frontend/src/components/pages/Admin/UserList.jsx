@@ -239,7 +239,7 @@ const UserList = () => {
                   </td>
                                      <td className="flex gap-2">
                      <button
-                       className="btn btn-sm btn-ghost"
+                       className="btn btn-sm btn-primary"
                        onClick={() => {
                          setSelectedUser(u);
                          setShowView(true);

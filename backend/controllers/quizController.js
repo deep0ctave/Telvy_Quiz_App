@@ -2,13 +2,13 @@ const db = require('../config/db');
 
 async function createQuiz(req, res, next) {
   try {
-    const { title, description, total_time, quiz_type, scheduled_at, image_url, difficulty, tags } = req.body;
+    const { title, description, total_time, quiz_type, image_url, difficulty, tags } = req.body;
     const created_by = req.user.id;
 
     const ins = await db.query(
-      `INSERT INTO quizzes (title, description, total_time, quiz_type, scheduled_at, image_url, difficulty, tags, created_by)
-       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9) RETURNING id`,
-      [title, description, total_time, quiz_type, scheduled_at, image_url, difficulty, tags, created_by]
+      `INSERT INTO quizzes (title, description, total_time, quiz_type, image_url, difficulty, tags, created_by)
+       VALUES ($1,$2,$3,$4,$5,$6,$7,$8) RETURNING id`,
+      [title, description, total_time, quiz_type, image_url, difficulty, tags, created_by]
     );
 
     res.json({ id: ins.rows[0].id });
@@ -59,7 +59,7 @@ async function getQuiz(req, res, next) {
 async function updateQuiz(req, res, next) {
   try {
     const id = parseInt(req.params.id, 10);
-    const allowed = ['title','description','total_time','quiz_type','scheduled_at','number_of_questions','image_url','difficulty','tags'];
+    const allowed = ['title','description','total_time','quiz_type','number_of_questions','image_url','difficulty','tags'];
     const fields = [];
     const vals = [];
     let idx = 1;

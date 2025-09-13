@@ -10,6 +10,7 @@ const defaultQuestion = {
   difficulty: "medium",
   tags: "",
   time_limit: 30,
+  image_url: "",
 };
 
 const CreateQuestionModal = ({ onClose, onCreate }) => {
@@ -152,6 +153,29 @@ const CreateQuestionModal = ({ onClose, onCreate }) => {
               onChange={(e) => handleChange("time_limit", parseInt(e.target.value) || 0)}
               min="0"
             />
+          </fieldset>
+
+          <fieldset>
+            <legend className="label">Image URL (optional)</legend>
+            <input
+              type="url"
+              className="input input-bordered w-full"
+              placeholder="https://example.com/image.jpg"
+              value={form.image_url}
+              onChange={(e) => handleChange("image_url", e.target.value)}
+            />
+            {form.image_url && (
+              <div className="mt-2">
+                <img 
+                  src={form.image_url} 
+                  alt="Question preview" 
+                  className="max-w-full h-32 object-contain rounded border"
+                  onError={(e) => {
+                    e.target.style.display = 'none';
+                  }}
+                />
+              </div>
+            )}
           </fieldset>
 
                       {["mcq", "truefalse"].includes(form.question_type) && (

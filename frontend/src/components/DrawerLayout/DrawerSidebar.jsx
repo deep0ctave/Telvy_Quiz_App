@@ -28,7 +28,7 @@ function DrawerSidebar() {
           <svg className="w-8 h-8" fill="currentColor" viewBox="0 0 24 24">
             <circle cx="12" cy="12" r="10" />
           </svg>
-          <span className="font-bold text-lg">Telvy</span>
+          <span className="font-bold text-lg">Schoolmela</span>
         </div>
 
         <ul className="menu px-4 py-2 w-full flex-1 space-y-1">
@@ -44,6 +44,7 @@ function DrawerSidebar() {
 
           {actualUser?.role === 'teacher' && (
             <>
+              <li><NavLink to="/admin/dashboard" className={getLinkClasses}>Live Dashboard</NavLink></li>
               <li><NavLink to="/admin/quizzes" className={getLinkClasses}>Manage Quizzes</NavLink></li>
               <li><NavLink to="/admin/questions" className={getLinkClasses}>Question Pool</NavLink></li>
             </>
@@ -51,6 +52,7 @@ function DrawerSidebar() {
 
           {actualUser?.role === 'admin' && (
             <>
+              <li><NavLink to="/admin/dashboard" className={getLinkClasses}>Live Dashboard</NavLink></li>
               <li><NavLink to="/admin/users" className={getLinkClasses}>Manage Users</NavLink></li>
               <li><NavLink to="/admin/quizzes" className={getLinkClasses}>Manage Quizzes</NavLink></li>
               <li><NavLink to="/admin/questions" className={getLinkClasses}>Question Pool</NavLink></li>
