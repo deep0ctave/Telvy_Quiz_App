@@ -39,6 +39,7 @@ const LiveAttempt = () => {
   const lastAnswerChangeAtRef = useRef(new Map()); // questionId -> ts
   const tabIdRef = useRef(`${Date.now()}-${Math.random().toString(36).slice(2, 8)}`);
   const bcRef = useRef(null);
+  const timerIntervalRef = useRef(null);
 
   // Helper function to normalize options format
   const normalizeOptions = (options) => {
@@ -271,15 +272,25 @@ const LiveAttempt = () => {
         setQuizData(attemptData.quiz);
         
         // Set start time and total time for fallback timer
-        if (attemptData.started_at) {
-          setStartTime(new Date(attemptData.started_at));
-        } else {
-          setStartTime(new Date());
-        }
-        // Use server-provided total_time if available
+        // If we have a remaining_time from server, calculate the correct start time
         const tt = attemptData.total_time || attemptData.quiz?.total_time || 300;
         setTotalTime(tt);
-        setFallbackTimer(typeof attemptData.remaining_time === 'number' ? attemptData.remaining_time : tt);
+        
+        if (typeof attemptData.remaining_time === 'number' && attemptData.remaining_time >= 0) {
+          // Use remaining time to calculate when the timer should have started
+          const now = new Date();
+          const elapsed = tt - attemptData.remaining_time;
+          const calculatedStartTime = new Date(now.getTime() - (elapsed * 1000));
+          setStartTime(calculatedStartTime);
+          setFallbackTimer(attemptData.remaining_time);
+        } else if (attemptData.started_at) {
+          // Fallback to original start time if no remaining_time provided
+          setStartTime(new Date(attemptData.started_at));
+          setFallbackTimer(tt);
+        } else {
+          setStartTime(new Date());
+          setFallbackTimer(tt);
+        }
         // If remaining time is explicitly provided and is zero, redirect to results
         if (attemptData.remaining_time === 0) {
           navigate(`/attempts/result/${attemptId}`);
@@ -352,8 +363,23 @@ const LiveAttempt = () => {
 
     const handleTimer = ({ attempt_id, remaining_time, total_time }) => {
       if (parseInt(attemptId) !== attempt_id) return;
+      
+      console.log('[TIMER-UPDATE] Received timer update:', { attempt_id, remaining_time, total_time });
+      
       setTotalTime(total_time || 300);
-      setFallbackTimer(remaining_time || 0);
+      
+      // When timer is reset, recalculate the start time based on remaining time
+      if (typeof remaining_time === 'number' && remaining_time >= 0) {
+        const now = new Date();
+        const elapsed = (total_time || 300) - remaining_time;
+        const calculatedStartTime = new Date(now.getTime() - (elapsed * 1000));
+        setStartTime(calculatedStartTime);
+        setFallbackTimer(remaining_time);
+        console.log('[TIMER-UPDATE] Recalculated start time:', calculatedStartTime, 'for remaining:', remaining_time);
+      } else {
+        setFallbackTimer(remaining_time || 0);
+      }
+      
       // Server will handle auto-submission when timer expires
     };
 
@@ -412,6 +438,11 @@ const LiveAttempt = () => {
       socketOff('authenticated', onAuth);
       socketOff('quiz_submitted', handleQuizSubmitted);
       clearTimeout(t);
+      // Clear timer interval
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
     };
   }, [attemptId, attemptStatus]);
 
@@ -441,6 +472,44 @@ const LiveAttempt = () => {
       }
     };
   }, [questions.length, attemptStatus, performSync]);
+
+  // Local timer to keep fallback timer in sync
+  useEffect(() => {
+    if (!startTime || !totalTime || attemptStatus !== 'in_progress') {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+      return;
+    }
+
+    // Clear any existing timer
+    if (timerIntervalRef.current) {
+      clearInterval(timerIntervalRef.current);
+    }
+
+    // Start local timer
+    timerIntervalRef.current = setInterval(() => {
+      const now = new Date();
+      const elapsed = Math.floor((now - startTime) / 1000);
+      const remaining = Math.max(0, totalTime - elapsed);
+      
+      setFallbackTimer(remaining);
+      
+      // If timer expires, let the server handle auto-submission
+      if (remaining <= 0) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    }, 1000);
+
+    return () => {
+      if (timerIntervalRef.current) {
+        clearInterval(timerIntervalRef.current);
+        timerIntervalRef.current = null;
+      }
+    };
+  }, [startTime, totalTime, attemptStatus]);
 
   const currentQuestion = questions[currentQuestionIndex];
 

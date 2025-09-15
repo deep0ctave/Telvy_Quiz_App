@@ -31,6 +31,7 @@ import UserList from '../components/pages/Admin/UserList';
 import QuestionList from '../components/pages/Admin/QuestionList';
 import QuizList from '../components/pages/Admin/QuizList';
 import LiveDashboard from '../components/pages/Admin/LiveDashboard';
+import Results from '../components/pages/Admin/Results';
 
 import PrivateRoute from './PrivateRoute';
 
@@ -110,6 +111,10 @@ const AppRouter = () => {
         <Route
           path="/admin/dashboard"
           element={<PrivateRoute allowedRoles={['admin', 'teacher']}><LiveDashboard /></PrivateRoute>}
+        />
+        <Route
+          path="/admin/results"
+          element={<PrivateRoute allowedRoles={['admin', 'teacher']}><Results /></PrivateRoute>}
         />
         <Route
           path="/admin/users"

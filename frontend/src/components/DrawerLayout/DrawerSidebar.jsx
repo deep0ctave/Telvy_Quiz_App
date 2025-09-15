@@ -45,6 +45,7 @@ function DrawerSidebar() {
           {actualUser?.role === 'teacher' && (
             <>
               <li><NavLink to="/admin/dashboard" className={getLinkClasses}>Live Dashboard</NavLink></li>
+              <li><NavLink to="/admin/results" className={getLinkClasses}>Results</NavLink></li>
               <li><NavLink to="/admin/quizzes" className={getLinkClasses}>Manage Quizzes</NavLink></li>
               <li><NavLink to="/admin/questions" className={getLinkClasses}>Question Pool</NavLink></li>
             </>
@@ -53,6 +54,7 @@ function DrawerSidebar() {
           {actualUser?.role === 'admin' && (
             <>
               <li><NavLink to="/admin/dashboard" className={getLinkClasses}>Live Dashboard</NavLink></li>
+              <li><NavLink to="/admin/results" className={getLinkClasses}>Results</NavLink></li>
               <li><NavLink to="/admin/users" className={getLinkClasses}>Manage Users</NavLink></li>
               <li><NavLink to="/admin/quizzes" className={getLinkClasses}>Manage Quizzes</NavLink></li>
               <li><NavLink to="/admin/questions" className={getLinkClasses}>Question Pool</NavLink></li>

@@ -13,6 +13,7 @@ const quizRoutes = require('./routes/quizRoutes');
 const questionRoutes = require('./routes/questionRoutes');
 const attemptRoutes = require('./routes/attemptRoutes');
 const assignmentRoutes = require('./routes/assignmentRoutes'); // ✅ NEW
+const miscRoutes = require('./routes/miscRoutes');
 const healthRoutes = require('./routes/healthRoutes');
 const studentRoutes = require('./routes/studentRoutes');
 
@@ -41,9 +42,16 @@ app.use(cors(corsOptions));
 app.use((req, res, next) => {
   res.header('Access-Control-Allow-Credentials', 'true');
   const requestOrigin = req.headers.origin;
+  
+  // Log CORS requests for debugging
+  console.log(`CORS Request: ${req.method} ${req.path} from origin: ${requestOrigin}`);
+  
   if (allowedOrigins.includes(requestOrigin)) {
     res.header('Access-Control-Allow-Origin', requestOrigin);
+  } else if (requestOrigin) {
+    console.log(`CORS blocked origin: ${requestOrigin}. Allowed origins:`, allowedOrigins);
   }
+  
   res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept, Authorization');
   
@@ -56,6 +64,16 @@ app.use((req, res, next) => {
 
 app.use(cookieParser());
 
+// Root route for health check
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Telvy Quiz App API is running!', 
+    version: '1.0.0',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 // routes
 app.use('/api/auth', authRoutes);
 app.use('/api/users', userRoutes);
@@ -63,6 +81,7 @@ app.use('/api/quizzes', quizRoutes);
 app.use('/api/questions', questionRoutes);
 app.use('/api/attempts', attemptRoutes);
 app.use('/api/assignments', assignmentRoutes); // ✅ NEW
+app.use('/api/misc', miscRoutes);
 app.use('/api/student', studentRoutes);
 
 // health

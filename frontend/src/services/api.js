@@ -208,6 +208,18 @@ export const getMyAssignments = async () => {
   return res.data;
 };
 
+// Admin/Teacher: Results - attempts listing
+export const listAttempts = async (params = {}) => {
+  const res = await api.get('/attempts', { params });
+  return res.data;
+};
+
+// Admin/Teacher: Attempt detail
+export const getAttemptAdmin = async (attemptId) => {
+  const res = await api.get(`/attempts/${attemptId}`);
+  return res.data;
+};
+
 
 // ✅ Log all requests
 api.interceptors.request.use((config) => {

@@ -26,4 +26,10 @@ router.get('/:id',
   attemptController.getAttempt
 );
 
+// Admin/Teacher: list attempts with filters
+router.get('/',
+  authorizeRoles('teacher','admin'),
+  attemptController.adminListAttempts
+);
+
 module.exports = router;

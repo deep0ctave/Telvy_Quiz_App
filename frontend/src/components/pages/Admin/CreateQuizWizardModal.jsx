@@ -110,8 +110,13 @@ const CreateQuizWizardModal = ({ isOpen, onClose, selectedQuestions }) => {
 
     setLoading(true);
     try {
+      // total_time input is in minutes; backend expects seconds
+      const totalMinutes = parseInt(quizData.total_time, 10) || 0;
+      const totalSeconds = Math.max(0, totalMinutes * 60);
+
       const quizPayload = {
         ...quizData,
+        total_time: totalSeconds,
         image_url: quizData.image_url?.trim() || null,
         description: quizData.description?.trim() || null
       };

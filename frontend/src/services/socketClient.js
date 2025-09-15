@@ -18,12 +18,11 @@ export function connect(token) {
   const baseURL = (import.meta.env.VITE_API_BASE_URL?.replace(/\/api$/, '')) || 'https://schoolmela-quiz-app-backend-d4hgada5b6gdasd0.centralus-01.azurewebsites.net';
   socket = io(baseURL, {
     withCredentials: true,
-    transports: ['websocket', 'polling'],
+    transports: ['websocket'],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
-    path: '/socket.io',
-    secure: baseURL.startsWith('https://')
+    path: '/socket.io'
   });
 
   socket.on('connect', () => {

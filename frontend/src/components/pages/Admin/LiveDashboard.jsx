@@ -61,8 +61,20 @@ const LiveDashboard = () => {
       toast.error(error.message || 'Connection error');
     };
 
+    const handleTimerUpdate = (data) => {
+      // Update the attempts list in real-time when timer updates are received
+      setAttempts(prevAttempts => 
+        prevAttempts.map(attempt => 
+          attempt.attempt_id === data.attempt_id 
+            ? { ...attempt, remaining_time: data.remaining_time }
+            : attempt
+        )
+      );
+    };
+
     socketOn('authenticated', handleAuthenticated);
     socketOn('error', handleError);
+    socketOn('timer_update', handleTimerUpdate);
 
     // Set a timeout to show helpful message if authentication takes too long
     const authTimeout = setTimeout(() => {
@@ -78,6 +90,7 @@ const LiveDashboard = () => {
     return () => {
       socketOff('authenticated', handleAuthenticated);
       socketOff('error', handleError);
+      socketOff('timer_update', handleTimerUpdate);
       clearTimeout(authTimeout);
     };
   }, []); // Remove connected from dependency array
@@ -88,7 +101,7 @@ const LiveDashboard = () => {
 
     const interval = setInterval(() => {
       loadLiveAttempts();
-    }, 5000); // Refresh every 5 seconds
+    }, 2000); // Refresh every 2 seconds for more real-time feel
 
     return () => clearInterval(interval);
   }, [connected]);
@@ -506,8 +519,8 @@ const LiveDashboard = () => {
                         <button
                           onClick={() => {
                             setSelectedAttempt(attempt);
-                            // Set default duration to the original quiz duration (convert minutes to seconds)
-                            setNewDuration(attempt.quiz_total_time ? attempt.quiz_total_time * 60 : 300);
+                            // quiz_total_time is already in seconds from backend
+                            setNewDuration(attempt.quiz_total_time ? attempt.quiz_total_time : 300);
                             setShowTimerModal(true);
                           }}
                           className="btn btn-sm btn-info"

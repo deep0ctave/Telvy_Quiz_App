@@ -40,7 +40,7 @@ function attachSocketServer(httpServer) {
         if (!socket.userId) return socket.emit('error', { message: 'Not authenticated' });
 
         const q = await db.query(
-          `SELECT a.id, a.quiz_id, a.started_at, a.status, q.total_time
+          `SELECT a.id, a.quiz_id, a.started_at, a.status, a.state, q.total_time
            FROM attempts a JOIN quizzes q ON q.id = a.quiz_id
            WHERE a.id=$1 AND a.student_id=$2`,
           [attempt_id, socket.userId]
@@ -54,11 +54,13 @@ function attachSocketServer(httpServer) {
           activeTimers.delete(attempt_id);
         }
 
-        // Compute remaining seconds
-        const total = row.total_time || 300;
-        const start = new Date(row.started_at);
+        // Compute remaining seconds (respect timer override if present)
+        const state = row.state || {};
+        const override = state.timer_override;
+        const total = override?.total_duration_sec || row.total_time || 300;
+        const start = override?.reset_at ? new Date(override.reset_at) : new Date(row.started_at);
         const now = new Date();
-        let remaining = Math.max(0, Math.floor((total - (now - start) / 1000)));
+        let remaining = Math.max(0, Math.floor(total - ((now - start) / 1000)));
 
         // Join attempt room
         const room = `attempt:${attempt_id}`;
@@ -210,7 +212,7 @@ function attachSocketServer(httpServer) {
         activeAttempts.set(attempt_id, {
           userId: socket.userId,
           quizId: row.quiz_id,
-          startTime: new Date(), // Use current time for active timer
+          startTime: start, // honor override or started_at
           remainingTime: remaining,
           totalDuration: total
         });
@@ -318,10 +320,30 @@ function attachSocketServer(httpServer) {
     socket.on('get_attempt', async ({ attempt_id }, cb) => {
       try {
         if (!socket.userId) return cb && cb({ ok: false, error: 'not_authenticated' });
-        const r = await db.query(`SELECT * FROM attempts WHERE id=$1 AND student_id=$2`, [attempt_id, socket.userId]);
+        const r = await db.query(`SELECT a.*, q.total_time FROM attempts a JOIN quizzes q ON q.id=a.quiz_id WHERE a.id=$1 AND a.student_id=$2`, [attempt_id, socket.userId]);
         if (!r.rows.length) return cb && cb({ ok: false, error: 'not_found' });
         
         let attempt = r.rows[0];
+        
+        // Add remaining_time calculation for timer persistence
+        if (attempt.status === 'in_progress') {
+          const activeAttempt = activeAttempts.get(attempt_id);
+          const state = attempt.state || {};
+          const override = state.timer_override;
+          if (activeAttempt) {
+            // Use active timer data if available
+            const now = new Date();
+            const elapsedSinceReset = Math.floor((now - activeAttempt.startTime) / 1000);
+            attempt.remaining_time = Math.max(0, activeAttempt.remainingTime - elapsedSinceReset);
+          } else {
+            // Calculate based on database times
+            const totalTime = override?.total_duration_sec || attempt.total_time || 300;
+            const startTime = override?.reset_at ? new Date(override.reset_at) : new Date(attempt.started_at);
+            const now = new Date();
+            const elapsed = Math.floor((now - startTime) / 1000);
+            attempt.remaining_time = Math.max(0, totalTime - elapsed);
+          }
+        }
         
         // If attempt is completed, enhance with correct answers for review
         if (attempt.status === 'completed' && attempt.state && attempt.state.questions) {
@@ -453,6 +475,7 @@ function attachSocketServer(httpServer) {
             a.quiz_id,
             a.started_at,
             a.status,
+            a.state,
             u.name as student_name,
             u.username as student_username,
             u.email as student_email,
@@ -514,18 +537,28 @@ function attachSocketServer(httpServer) {
           const activeAttempt = activeAttempts.get(attempt.attempt_id);
           let remaining, elapsed, totalTime;
           
+          // Respect override from state if present
+          const state = attempt.state || {};
+          const override = state.timer_override;
+          const effStart = override?.reset_at ? new Date(override.reset_at) : startTime;
+          const effTotal = override?.total_duration_sec || attempt.total_time;
+
           if (activeAttempt) {
-            // Use the active timer data (most accurate)
-            const elapsedSinceReset = Math.floor((now - activeAttempt.startTime) / 1000);
-            remaining = Math.max(0, activeAttempt.remainingTime - elapsedSinceReset);
-            elapsed = elapsedSinceReset;
+            // Use the active timer data (most accurate). remainingTime is current remaining seconds.
+            remaining = Math.max(0, activeAttempt.remainingTime);
             totalTime = activeAttempt.totalDuration;
+            elapsed = Math.max(0, totalTime - remaining);
           } else {
             // For attempts without active timers, calculate based on database time
-            // But this should be rare since start_timer should create active timers
-            elapsed = Math.floor((now - startTime) / 1000);
-            remaining = Math.max(0, attempt.total_time - elapsed);
-            totalTime = attempt.total_time;
+            // This happens when the server restarts or timer was not properly started
+            elapsed = Math.floor((now - effStart) / 1000);
+            remaining = Math.max(0, effTotal - elapsed);
+            totalTime = effTotal;
+            
+            // If the attempt should have expired, mark it as such
+            if (remaining <= 0 && attempt.status === 'in_progress') {
+              console.log(`[LIVE-DASHBOARD] Attempt ${attempt.attempt_id} appears to have expired, remaining: ${remaining}`);
+            }
           }
           
           return {
@@ -561,18 +594,26 @@ function attachSocketServer(httpServer) {
           activeTimers.delete(attempt_id);
         }
 
-        // Update attempt start time to now
-        await db.query(`UPDATE attempts SET started_at=NOW() WHERE id=$1`, [attempt_id]);
+        // Update attempt start time to now and persist override in state
+        const nowTs = new Date();
+        await db.query(`UPDATE attempts SET started_at=NOW(), state = jsonb_set(COALESCE(state,'{}'::jsonb), '{timer_override}', $1::jsonb, true) WHERE id=$2`, [
+          JSON.stringify({ total_duration_sec: new_duration || 300, reset_at: nowTs.toISOString() }),
+          attempt_id
+        ]);
+
+        // Fetch quiz_id and student_id for metadata
+        const metaQ = await db.query(`SELECT quiz_id, student_id FROM attempts WHERE id=$1`, [attempt_id]);
+        const meta = metaQ.rows[0] || {};
 
         // Start new timer
         const room = `attempt:${attempt_id}`;
         const newRemaining = new_duration || 300; // Default 5 minutes
         
-        // Update activeAttempts map with new duration
+        // Update activeAttempts map with new duration and correct quizId/userId
         activeAttempts.set(attempt_id, {
-          userId: socket.userId,
-          quizId: attempt_id, // We'll get this from the attempt
-          startTime: new Date(),
+          userId: meta.student_id || socket.userId,
+          quizId: meta.quiz_id || null,
+          startTime: nowTs,
           remainingTime: newRemaining,
           totalDuration: new_duration || 300
         });
@@ -768,8 +809,12 @@ function attachSocketServer(httpServer) {
               activeTimers.delete(attempt.attempt_id);
             }
 
-            // Update attempt start time
-            await db.query(`UPDATE attempts SET started_at=NOW() WHERE id=$1`, [attempt.attempt_id]);
+            // Update attempt start time and persist override
+            const nowMass = new Date();
+            await db.query(`UPDATE attempts SET started_at=NOW(), state = jsonb_set(COALESCE(state,'{}'::jsonb), '{timer_override}', $1::jsonb, true) WHERE id=$2`, [
+              JSON.stringify({ total_duration_sec: new_duration || 300, reset_at: nowMass.toISOString() }),
+              attempt.attempt_id
+            ]);
 
             // Start new timer
             const room = `attempt:${attempt.attempt_id}`;
@@ -779,7 +824,7 @@ function attachSocketServer(httpServer) {
             activeAttempts.set(attempt.attempt_id, {
               userId: attempt.student_id,
               quizId: attempt.quiz_id,
-              startTime: new Date(),
+              startTime: nowMass,
               remainingTime: newRemaining,
               totalDuration: new_duration || 300
             });

@@ -2,6 +2,114 @@ const db = require('../config/db');
 const userStatsService = require('../services/userStatsService');
 
 /**
+ * Admin/Teacher: List attempts with filters and pagination
+ */
+async function adminListAttempts(req, res, next) {
+  try {
+    const { role } = req.user;
+    if (!['admin','teacher'].includes(role)) {
+      return res.status(403).json({ error: 'forbidden' });
+    }
+
+    const {
+      status, // in_progress | completed
+      school,
+      class: className,
+      section,
+      quiz_title,
+      student_name,
+      student_username,
+      from, // ISO date
+      to,   // ISO date
+      page = 1,
+      limit = 20,
+      sort = 'started_at_desc'
+    } = req.query;
+
+    const filters = [];
+    const params = [];
+    let p = 1;
+
+    // Base query
+    let base = `
+      FROM attempts a
+      JOIN users u ON u.id = a.student_id
+      JOIN quizzes q ON q.id = a.quiz_id
+      WHERE 1=1
+    `;
+
+    if (status) { filters.push(`a.status = $${p++}`); params.push(status); }
+    if (school) { filters.push(`u.school ILIKE $${p++}`); params.push(`%${school}%`); }
+    if (className) { filters.push(`u.class ILIKE $${p++}`); params.push(`%${className}%`); }
+    if (section) { filters.push(`u.section ILIKE $${p++}`); params.push(`%${section}%`); }
+    if (quiz_title) { filters.push(`q.title ILIKE $${p++}`); params.push(`%${quiz_title}%`); }
+    if (student_name) { filters.push(`u.name ILIKE $${p++}`); params.push(`%${student_name}%`); }
+    if (student_username) { filters.push(`u.username ILIKE $${p++}`); params.push(`%${student_username}%`); }
+    if (from) { filters.push(`a.started_at >= $${p++}`); params.push(new Date(from)); }
+    if (to) { filters.push(`a.started_at <= $${p++}`); params.push(new Date(to)); }
+
+    if (filters.length) {
+      base += ` AND ${filters.join(' AND ')}`;
+    }
+
+    // Sorting
+    let order = 'a.started_at DESC';
+    if (sort === 'started_at_asc') order = 'a.started_at ASC';
+    if (sort === 'finished_at_desc') order = 'a.finished_at DESC NULLS LAST';
+    if (sort === 'finished_at_asc') order = 'a.finished_at ASC NULLS FIRST';
+    if (sort === 'score_desc') order = 'a.score DESC NULLS LAST';
+    if (sort === 'score_asc') order = 'a.score ASC NULLS FIRST';
+
+    const pageNum = Math.max(1, parseInt(page, 10) || 1);
+    const limitNum = Math.min(100, Math.max(1, parseInt(limit, 10) || 20));
+    const offset = (pageNum - 1) * limitNum;
+
+    // Count total
+    const countQ = await db.query(`SELECT COUNT(*) AS total ${base}`, params);
+    const total = parseInt(countQ.rows[0].total, 10);
+
+    // Fetch rows
+    const rowsQ = await db.query(
+      `SELECT 
+         a.id as attempt_id,
+         a.quiz_id,
+         a.student_id,
+         a.started_at,
+         a.finished_at,
+         a.status,
+         a.score,
+         q.title as quiz_title,
+         q.total_time,
+         u.name as student_name,
+         u.username as student_username,
+         u.school, u.class, u.section
+       ${base}
+       ORDER BY ${order}
+       LIMIT ${limitNum} OFFSET ${offset}`,
+      params
+    );
+
+    // Compute duration seconds and format client can use
+    const now = new Date();
+    const data = rowsQ.rows.map(r => {
+      const started = new Date(r.started_at);
+      const finished = r.finished_at ? new Date(r.finished_at) : null;
+      const duration_sec = finished
+        ? Math.max(0, Math.floor((finished - started) / 1000))
+        : Math.max(0, Math.floor((now - started) / 1000));
+      return { ...r, duration_sec };
+    });
+
+    res.json({
+      total,
+      page: pageNum,
+      limit: limitNum,
+      items: data
+    });
+  } catch (err) { next(err); }
+}
+
+/**
  * Start an attempt
  */
 async function startAttempt(req, res, next) {
@@ -569,10 +677,20 @@ async function getAttempt(req, res, next) {
       }
     }
 
+    // Add remaining_time calculation for timer persistence
+    if (attempt.status === 'in_progress') {
+      const startTime = new Date(attempt.started_at);
+      const now = new Date();
+      const elapsed = Math.floor((now - startTime) / 1000);
+      const totalTime = attempt.quiz?.total_time || 300;
+      attempt.remaining_time = Math.max(0, totalTime - elapsed);
+    }
+
     console.log(`[DEBUG] getAttempt - Sending response:`, {
       attempt_id: attempt.id,
       status: attempt.status,
       score: attempt.score,
+      remaining_time: attempt.remaining_time,
       questions_count: attempt.state?.questions?.length || 0,
       questions_with_answers: attempt.state?.questions?.filter(q => q.answer !== null).length || 0
     });
@@ -767,5 +885,6 @@ module.exports = {
   getMyAttempts,
   getActiveAttempt,
   resumeAttempt,
-  resetAttempt
+  resetAttempt,
+  adminListAttempts
 };
